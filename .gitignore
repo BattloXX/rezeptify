@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+
+# Datenbank (niemals committen!)
+*.db
+*.db-shm
+*.db-wal
+
+# Uploads (Bilder bleiben lokal)
+static/uploads/*
+!static/uploads/.gitkeep
+
+# Secrets — config.py enthält Passwörter, nie committen!
+# Stattdessen config.example.py verwenden
+config.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
