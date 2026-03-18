@@ -931,7 +931,7 @@ a { color: inherit; text-decoration: none; }
 @media print {
   /* Hide everything except print area */
   html, body { margin: 0; padding: 0; background: white; }
-  body > *:not(#print-area) { display: none !important; }
+  body > *:not(#print-area):not(#rb-print-area) { display: none !important; }
 
   #print-area {
     display: block !important;
@@ -1527,6 +1527,334 @@ select.fc { cursor: pointer; }
   .grid { grid-template-columns: 1fr; }
   .logo { font-size: 0.88rem; }
 }
+
+/* ════════════════════════════════════════════════════
+   REZEPTBUCH
+════════════════════════════════════════════════════ */
+.rb-header {
+  background: var(--n-950);
+  border-radius: var(--r-lg);
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.25rem;
+  position: relative;
+  overflow: hidden;
+}
+.rb-header::before {
+  content: '📖';
+  position: absolute;
+  right: 1.5rem; top: 50%;
+  transform: translateY(-50%);
+  font-size: 3rem;
+  opacity: 0.12;
+}
+.rb-header h2 {
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--n-0);
+  margin-bottom: 0.3rem;
+}
+.rb-header p { font-size: 0.86rem; color: rgba(255,255,255,0.45); }
+
+.rb-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+@media (max-width: 700px) { .rb-cols { grid-template-columns: 1fr; } }
+
+.rb-panel {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.rb-panel-hdr {
+  background: var(--n-50);
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.rb-panel-hdr span { color: var(--accent); font-size: 0.9rem; }
+
+.rb-list {
+  list-style: none;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 6px;
+}
+.rb-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--t);
+  font-size: 0.86rem;
+  color: var(--text);
+  user-select: none;
+}
+.rb-item:hover { background: var(--n-50); }
+.rb-item-thumb {
+  width: 38px; height: 38px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--n-100);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  overflow: hidden;
+}
+.rb-item-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.rb-item-info { flex: 1; min-width: 0; }
+.rb-item-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rb-item-meta  { font-size: 0.72rem; color: var(--muted); }
+.rb-item-add {
+  background: var(--n-100);
+  border: none;
+  border-radius: 50%;
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  color: var(--leaf);
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  transition: all var(--t);
+}
+.rb-item-add:hover { background: var(--leaf); color: white; }
+
+/* Selected list — sortable */
+.rb-selected-list {
+  list-style: none;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 6px;
+}
+.rb-sel-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  margin-bottom: 5px;
+  cursor: grab;
+  user-select: none;
+  transition: box-shadow var(--t), opacity var(--t);
+  font-size: 0.86rem;
+}
+.rb-sel-item:active { cursor: grabbing; }
+.rb-sel-item.dragging { opacity: 0.4; box-shadow: 0 4px 16px var(--shadow); }
+.rb-sel-item.drag-over { border-color: var(--accent); background: var(--a-50); }
+.rb-drag-handle {
+  color: var(--muted);
+  cursor: grab;
+  flex-shrink: 0;
+  display: flex;
+}
+.rb-drag-handle svg { width: 16px; height: 16px; }
+.rb-sel-num {
+  background: var(--accent);
+  color: white;
+  border-radius: 50%;
+  width: 22px; height: 22px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.rb-sel-thumb {
+  width: 34px; height: 34px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: var(--n-100);
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.9rem;
+}
+.rb-sel-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.rb-sel-title { flex: 1; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rb-sel-remove {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all var(--t);
+  flex-shrink: 0;
+}
+.rb-sel-remove:hover { background: #fee2e2; color: #991b1b; }
+
+.rb-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+/* Book settings */
+.rb-settings {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+@media (max-width: 600px) { .rb-settings { grid-template-columns: 1fr; } }
+
+/* Print styles for Rezeptbuch */
+@media print {
+  #rb-print-area { display: block !important; position: fixed; inset: 0; z-index: 9999; background: white; }
+}
+#rb-print-area { display: none; }
+
+/* ════════════════════════════════════════════════════
+   SIDENAV — hidden by default (mobile first)
+════════════════════════════════════════════════════ */
+.sidenav      { display: none; }
+.snav-item    { display: none; }
+.snav-divider { display: none; }
+.snav-label   { display: none; }
+.snav-new     { display: none; }
+
+/* ════════════════════════════════════════════════════
+   TABLET — Portrait (600–1024px)
+════════════════════════════════════════════════════ */
+@media (min-width: 600px) and (max-width: 1023px) {
+  .grid { grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  .content { padding: 1.25rem 1.5rem; }
+}
+
+/* ════════════════════════════════════════════════════
+   TABLET — Landscape & Desktop (1024px+)
+   Two-column layout: sidebar left, content right
+════════════════════════════════════════════════════ */
+@media (min-width: 1024px) {
+
+  /* Shell: side nav instead of bottom nav */
+  #app {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 56px 1fr;
+    grid-template-areas:
+      "topbar  topbar"
+      "sidenav main";
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .topbar   { grid-area: topbar; }
+  .content  { grid-area: main; overflow-y: auto; max-width: none;
+               padding: 1.5rem 2rem; height: 100%; }
+  .bottomnav { display: none; }  /* hide bottom nav on large screens */
+
+  /* Side navigation — show on desktop */
+  .sidenav      { display: flex; }
+  .snav-item    { display: flex; }
+  .snav-divider { display: block; }
+  .snav-label   { display: block; }
+  .snav-new     { display: flex; }
+
+  .sidenav {
+    grid-area: sidenav;
+    background: var(--n-950);
+    border-right: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    flex-direction: column;
+    padding: 1rem 0.75rem;
+    gap: 4px;
+    overflow-y: auto;
+  }
+  .snav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0.65rem 0.9rem;
+    border-radius: var(--r-sm);
+    color: rgba(255,255,255,0.45);
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-family: var(--sans);
+    transition: all var(--t);
+    text-align: left;
+    width: 100%;
+  }
+  .snav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+  .snav-item:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.8); }
+  .snav-item.on { background: rgba(232,130,58,0.15); color: var(--accent); }
+  .snav-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.07);
+    margin: 8px 0;
+  }
+  .snav-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: rgba(255,255,255,0.2);
+    padding: 0 0.9rem;
+    margin-bottom: 2px;
+  }
+  .snav-new {
+    margin-top: auto;
+    width: 100%;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: var(--r-sm);
+    padding: 0.7rem 0.9rem;
+    font-size: 0.86rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--sans);
+    transition: background var(--t);
+  }
+  .snav-new:hover { background: var(--a-500); }
+  .snav-new svg { width: 16px; height: 16px; }
+
+  /* Hide mobile topbar new button — side nav has it */
+  .topbar-btn { display: none; }
+
+  /* Grid: more columns */
+  .grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1.1rem; }
+
+  /* Detail modal: wider, two-column body on large screens */
+  .modal { max-width: 860px; }
+  .d-hero { height: 300px; }
+
+  /* PWA banner: reposition for side nav layout */
+  .pwa-banner { top: 56px; left: 220px; }
+}
+
+/* Tablet landscape specifically (1024px wide but not full desktop) */
+@media (min-width: 1024px) and (max-width: 1366px) {
+  .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+}
 </style>
 </head>
 <body>
@@ -1563,6 +1891,28 @@ select.fc { cursor: pointer; }
   <strong>„Zum Home-Bildschirm"</strong> um Rezeptify zu installieren.
   <div class="ios-hint-arrow"></div>
 </div>
+
+<!-- ══ SIDE NAV (tablet/desktop) ══ -->
+<nav class="sidenav" id="sidenav">
+  <div class="snav-label">Menü</div>
+  <button class="snav-item on" id="snav-home" onclick="showView('home')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    Übersicht
+  </button>
+  <button class="snav-item" id="snav-import" onclick="showView('import')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+    KI Import
+  </button>
+  <button class="snav-item" id="snav-buch" onclick="showView('buch')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    Rezeptbuch
+  </button>
+  <div class="snav-divider"></div>
+  <button class="snav-new" onclick="openNewForm()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Neues Rezept
+  </button>
+</nav>
 
 <!-- ══ CONTENT ══ -->
 <div class="content">
@@ -1697,6 +2047,74 @@ select.fc { cursor: pointer; }
     </div>
   </section>
 
+  <!-- VIEW: Rezeptbuch -->
+  <section class="view" id="view-buch">
+    <div class="rb-header">
+      <h2>Rezeptbuch erstellen</h2>
+      <p>Rezepte auswählen, sortieren und als schönes PDF exportieren.</p>
+    </div>
+
+    <!-- Settings -->
+    <div class="rb-settings">
+      <div class="fg">
+        <label class="filter-label">Buchtitel</label>
+        <input class="fc" id="rb-titel" value="Rezeptbuch der Familie Battlogg" placeholder="Buchtitel …">
+      </div>
+      <div class="fg">
+        <label class="filter-label">Untertitel</label>
+        <input class="fc" id="rb-untertitel" value="Unsere liebsten Familienrezepte" placeholder="Untertitel …">
+      </div>
+      <div class="fg">
+        <label class="filter-label">Autor / Familie</label>
+        <input class="fc" id="rb-autor" value="Familie Battlogg" placeholder="Name …">
+      </div>
+      <div class="fg">
+        <label class="filter-label">Jahr</label>
+        <input class="fc" id="rb-jahr" value="" placeholder="2026">
+      </div>
+    </div>
+
+    <!-- Two-column: available | selected -->
+    <div class="rb-cols">
+      <!-- Available recipes -->
+      <div class="rb-panel">
+        <div class="rb-panel-hdr">
+          Verfügbare Rezepte
+          <span id="rb-avail-count">0</span>
+        </div>
+        <div style="padding:8px 8px 4px">
+          <input class="search-inp" id="rb-search" placeholder="Suchen …" oninput="rbFilter()" style="height:34px;font-size:0.83rem">
+        </div>
+        <ul class="rb-list" id="rb-avail-list"></ul>
+      </div>
+
+      <!-- Selected recipes -->
+      <div class="rb-panel">
+        <div class="rb-panel-hdr">
+          Ausgewählt &amp; Reihenfolge
+          <span id="rb-sel-count">0 Rezepte</span>
+        </div>
+        <ul class="rb-selected-list" id="rb-sel-list">
+          <li class="rb-empty">Noch keine Rezepte ausgewählt.<br>Links auf + klicken.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:2rem">
+      <button class="btn btn-primary" onclick="exportRezeptbuch()" id="rb-export-btn" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        Rezeptbuch als PDF exportieren
+      </button>
+      <button class="btn btn-ghost" onclick="rbClearAll()">
+        Auswahl leeren
+      </button>
+      <button class="btn btn-ghost" onclick="rbSelectAll()">
+        Alle hinzufügen
+      </button>
+    </div>
+  </section>
+
 </div><!-- /content -->
 
 <!-- ══ BOTTOM NAV ══ -->
@@ -1709,9 +2127,16 @@ select.fc { cursor: pointer; }
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
     KI Import
   </button>
+  <button class="bnav-item" id="nav-buch" onclick="showView('buch')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    Rezeptbuch
+  </button>
 </nav>
 
 </div><!-- /app -->
+
+<!-- Print area for Rezeptbuch — direct child of body for print CSS -->
+<div id="rb-print-area"></div>
 
 <!-- ══════════════════════════════════════════════════
      DETAIL MODAL
@@ -1876,8 +2301,11 @@ async function api(path, opts = {}) {
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('on'));
   document.querySelectorAll('.bnav-item').forEach(b => b.classList.remove('on'));
+  document.querySelectorAll('.snav-item').forEach(b => b.classList.remove('on'));
   document.getElementById('view-' + name).classList.add('on');
-  document.getElementById('nav-' + name).classList.add('on');
+  document.getElementById('nav-' + name)?.classList.add('on');
+  document.getElementById('snav-' + name)?.classList.add('on');
+  if (name === 'buch') initRezeptbuch();
 }
 
 // ═══════════════════════ DATA
@@ -2779,6 +3207,306 @@ function toast(msg, type='') {
   el.className = 'toast on' + (type ? ' '+type : '');
   toastT2 = setTimeout(() => el.classList.remove('on'), 3500);
 }
+
+// ═══════════════════════ REZEPTBUCH
+const RB = { selected: [], allRezepte: [], dragSrc: null };
+const EM2 = {'Frühstück':'🌅','Vorspeise':'🥗','Hauptgericht':'🍽️','Dessert':'🍰','Snack':'🥨','Getränk':'🥤','Backen':'🥐','Salat':'🥙','Suppe':'🍜','Sonstiges':'🍴'};
+
+async function initRezeptbuch() {
+  if (RB.allRezepte.length) { renderRbAvail(); return; }
+  const data = await api('/api/rezepte?limit=200').catch(() => null);
+  if (!data) return;
+  RB.allRezepte = data.items;
+  document.getElementById('rb-jahr').value = new Date().getFullYear();
+  renderRbAvail();
+}
+
+function rbFilter() {
+  const q = document.getElementById('rb-search').value.toLowerCase();
+  renderRbAvail(q);
+}
+
+function renderRbAvail(filter = '') {
+  const list = document.getElementById('rb-avail-list');
+  const selIds = new Set(RB.selected.map(r => r.id));
+  const items = RB.allRezepte.filter(r =>
+    !selIds.has(r.id) &&
+    (r.titel.toLowerCase().includes(filter) || (r.kategorie||'').toLowerCase().includes(filter))
+  );
+  document.getElementById('rb-avail-count').textContent = items.length;
+  list.innerHTML = items.length ? items.map(r => {
+    const em = EM2[r.kategorie] || '🍴';
+    const img = r.haupt_bild || r.bilder?.[0]?.url;
+    const thumb = img
+      ? `<div class="rb-item-thumb"><img src="${x(img)}" alt=""></div>`
+      : `<div class="rb-item-thumb">${em}</div>`;
+    const gz = (r.zeit_vorb||0)+(r.zeit_koch||0);
+    return `<li class="rb-item" onclick="rbAdd(${r.id})">
+      ${thumb}
+      <div class="rb-item-info">
+        <div class="rb-item-title">${x(r.titel)}</div>
+        <div class="rb-item-meta">${r.kategorie||''}${gz?' · '+gz+' min':''}</div>
+      </div>
+      <button class="rb-item-add" onclick="event.stopPropagation();rbAdd(${r.id})">+</button>
+    </li>`;
+  }).join('') : `<li class="rb-empty">Keine Rezepte gefunden</li>`;
+}
+
+function renderRbSelected() {
+  const list = document.getElementById('rb-sel-list');
+  const btn  = document.getElementById('rb-export-btn');
+  document.getElementById('rb-sel-count').textContent = RB.selected.length + ' Rezepte';
+  btn.disabled = RB.selected.length === 0;
+  if (!RB.selected.length) {
+    list.innerHTML = '<li class="rb-empty">Noch keine Rezepte ausgewählt.<br>Links auf + klicken.</li>';
+    return;
+  }
+  list.innerHTML = RB.selected.map((r, i) => {
+    const em = EM2[r.kategorie] || '🍴';
+    const img = r.haupt_bild || r.bilder?.[0]?.url;
+    const thumb = img
+      ? `<div class="rb-sel-thumb"><img src="${x(img)}" alt=""></div>`
+      : `<div class="rb-sel-thumb">${em}</div>`;
+    return `<li class="rb-sel-item" draggable="true"
+        ondragstart="rbDragStart(event,${i})"
+        ondragover="rbDragOver(event,${i})"
+        ondrop="rbDrop(event,${i})"
+        ondragend="rbDragEnd()">
+      <span class="rb-drag-handle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="18" x2="16" y2="18"/></svg>
+      </span>
+      <span class="rb-sel-num">${i+1}</span>
+      ${thumb}
+      <span class="rb-sel-title">${x(r.titel)}</span>
+      <button class="rb-sel-remove" onclick="rbRemove(${r.id})">×</button>
+    </li>`;
+  }).join('');
+}
+
+function rbAdd(id) {
+  const r = RB.allRezepte.find(r => r.id === id);
+  if (!r || RB.selected.find(s => s.id === id)) return;
+  RB.selected.push(r);
+  renderRbSelected();
+  renderRbAvail(document.getElementById('rb-search').value.toLowerCase());
+}
+function rbRemove(id) {
+  RB.selected = RB.selected.filter(r => r.id !== id);
+  renderRbSelected();
+  renderRbAvail(document.getElementById('rb-search').value.toLowerCase());
+}
+function rbClearAll() { RB.selected = []; renderRbSelected(); renderRbAvail(); }
+function rbSelectAll() {
+  RB.allRezepte.forEach(r => { if (!RB.selected.find(s => s.id === r.id)) RB.selected.push(r); });
+  renderRbSelected(); renderRbAvail();
+}
+
+// Drag & Drop reorder
+function rbDragStart(e, i) {
+  RB.dragSrc = i;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.classList.add('dragging');
+}
+function rbDragOver(e, i) {
+  e.preventDefault();
+  document.querySelectorAll('.rb-sel-item').forEach(el => el.classList.remove('drag-over'));
+  e.currentTarget.classList.add('drag-over');
+}
+function rbDrop(e, i) {
+  e.preventDefault();
+  if (RB.dragSrc === null || RB.dragSrc === i) return;
+  const moved = RB.selected.splice(RB.dragSrc, 1)[0];
+  RB.selected.splice(i, 0, moved);
+  RB.dragSrc = null;
+  renderRbSelected();
+}
+function rbDragEnd() {
+  document.querySelectorAll('.rb-sel-item').forEach(el => {
+    el.classList.remove('dragging', 'drag-over');
+  });
+  RB.dragSrc = null;
+}
+
+// ── PDF Export ─────────────────────────────────────────────────────────────
+async function exportRezeptbuch() {
+  if (!RB.selected.length) return;
+  const titel      = document.getElementById('rb-titel').value || 'Rezeptbuch';
+  const untertitel = document.getElementById('rb-untertitel').value || '';
+  const autor      = document.getElementById('rb-autor').value || '';
+  const jahr       = document.getElementById('rb-jahr').value || new Date().getFullYear();
+  const today      = new Date().toLocaleDateString('de-AT');
+
+  // Fetch full recipe data for all selected
+  toast('Lade Rezeptdaten …', '');
+  const rezepte = await Promise.all(
+    RB.selected.map(r => api('/api/rezepte/' + r.id).catch(() => r))
+  );
+
+  const area = document.getElementById('rb-print-area');
+
+  // ── Cover page
+  const coverHtml = `
+    <div class="rb-cover">
+      <div class="rb-cover-inner">
+        <div class="rb-cover-icon">🌿</div>
+        <h1 class="rb-cover-title">${x(titel)}</h1>
+        ${untertitel ? `<p class="rb-cover-sub">${x(untertitel)}</p>` : ''}
+        <div class="rb-cover-divider"></div>
+        ${autor ? `<p class="rb-cover-autor">${x(autor)}</p>` : ''}
+        ${jahr  ? `<p class="rb-cover-jahr">${x(String(jahr))}</p>` : ''}
+      </div>
+    </div>`;
+
+  // ── Table of contents
+  const tocRows = rezepte.map((r, i) => {
+    const gz = (r.zeit_vorb||0)+(r.zeit_koch||0);
+    return `<tr class="rb-toc-row">
+      <td class="rb-toc-num">${i+1}</td>
+      <td class="rb-toc-name">${x(r.titel)}</td>
+      <td class="rb-toc-cat">${x(r.kategorie||'')}</td>
+      <td class="rb-toc-time">${gz ? gz+' min' : '—'}</td>
+    </tr>`;
+  }).join('');
+  const tocHtml = `
+    <div class="rb-toc rb-page-break">
+      <h2 class="rb-sect-h">Inhaltsverzeichnis</h2>
+      <table class="rb-toc-table">
+        <thead><tr>
+          <th style="width:32px">#</th>
+          <th>Rezept</th>
+          <th style="width:100px">Kategorie</th>
+          <th style="width:60px">Zeit</th>
+        </tr></thead>
+        <tbody>${tocRows}</tbody>
+      </table>
+    </div>`;
+
+  // ── Recipe pages
+  const recipePagesHtml = rezepte.map((r, i) => {
+    const gz = (r.zeit_vorb||0)+(r.zeit_koch||0);
+    const metaParts = [
+      r.kategorie,
+      gz ? gz+' Min.' : null,
+      r.portionen ? r.portionen+' Portionen' : null,
+      r.schwierigkeit,
+      r.kalorien_pro_portion ? r.kalorien_pro_portion+' kcal/P.' : null,
+    ].filter(Boolean);
+
+    const imgUrl = r.haupt_bild || r.bilder?.[0]?.url;
+    const imgHtml = imgUrl
+      ? `<img class="rb-recipe-img" src="${window.location.origin}${imgUrl}" alt="${x(r.titel)}">`
+      : '';
+
+    const ingsHtml = (r.zutaten||[]).map(z =>
+      `<tr><td class="rb-ing-amt">${x(z.menge||'')} ${x(z.einheit||'')}</td><td>${x(z.name)}</td></tr>`
+    ).join('');
+
+    const tagsHtml = (r.tags||[]).length
+      ? `<div class="rb-tags">${(r.tags||[]).map(t=>`<span class="rb-tag">${x(t)}</span>`).join('')}</div>` : '';
+
+    const srcHtml = r.quelle_url
+      ? `<div class="rb-src">Quelle: ${x(r.quelle_url)}</div>` : '';
+
+    return `<div class="rb-recipe rb-page-break">
+      <div class="rb-recipe-hdr">
+        <span class="rb-recipe-num">${i+1}</span>
+        <div>
+          ${r.kategorie ? `<div class="rb-recipe-kat">${x(r.kategorie)}</div>` : ''}
+          <h2 class="rb-recipe-title">${x(r.titel)}</h2>
+          <div class="rb-recipe-meta">${metaParts.join(' · ')}</div>
+        </div>
+      </div>
+      ${imgHtml}
+      ${r.beschreibung ? `<p class="rb-recipe-desc">${x(r.beschreibung)}</p>` : ''}
+      ${ingsHtml ? `<h3 class="rb-sub-h">Zutaten</h3><table class="rb-ing-table">${ingsHtml}</table>` : ''}
+      ${r.zubereitung ? `<h3 class="rb-sub-h">Zubereitung</h3><div class="rb-steps">${x(r.zubereitung)}</div>` : ''}
+      ${tagsHtml}${srcHtml}
+    </div>`;
+  }).join('');
+
+  // ── Print CSS (injected inline)
+  const printCss = `
+    <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, serif; font-size: 11pt; color: #1a1a1a; line-height: 1.65; }
+    @page { size: A4; margin: 2cm 2.2cm; }
+
+    /* Cover */
+    .rb-cover { height: 100vh; display: flex; align-items: center; justify-content: center; text-align: center; background: #0f1a0a; color: white; page-break-after: always; break-after: page; }
+    .rb-cover-inner { padding: 3cm; }
+    .rb-cover-icon { font-size: 4rem; margin-bottom: 1.5cm; }
+    .rb-cover-title { font-size: 28pt; font-weight: 700; letter-spacing: -0.5px; line-height: 1.2; margin-bottom: 0.5cm; }
+    .rb-cover-sub { font-size: 14pt; color: rgba(255,255,255,0.6); margin-bottom: 1cm; font-style: italic; }
+    .rb-cover-divider { width: 4cm; height: 2px; background: #e8823a; margin: 1cm auto; }
+    .rb-cover-autor { font-size: 12pt; color: rgba(255,255,255,0.7); margin-bottom: 0.3cm; }
+    .rb-cover-jahr  { font-size: 10pt; color: rgba(255,255,255,0.4); }
+
+    /* TOC */
+    .rb-page-break { page-break-before: always; }
+    .rb-sect-h { font-size: 18pt; font-weight: 700; margin-bottom: 0.8cm; color: #1a1a1a; border-bottom: 2pt solid #e8823a; padding-bottom: 0.3cm; }
+    .rb-toc-table { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
+    .rb-toc-table thead th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; color: #888; border-bottom: 1pt solid #ddd; padding: 0 0 6pt; }
+    .rb-toc-row td { padding: 7pt 0; border-bottom: 0.5pt solid #eee; vertical-align: middle; }
+    .rb-toc-num  { color: #e8823a; font-weight: 700; font-size: 9pt; padding-right: 10pt !important; }
+    .rb-toc-name { font-weight: 600; }
+    .rb-toc-cat  { color: #888; font-size: 9.5pt; }
+    .rb-toc-time { color: #888; font-size: 9.5pt; text-align: right; }
+
+    /* Recipe page */
+    .rb-recipe-hdr { display: flex; align-items: flex-start; gap: 14pt; margin-bottom: 0.5cm; }
+    .rb-recipe-num { background: #e8823a; color: white; border-radius: 50%; width: 32pt; height: 32pt; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11pt; flex-shrink: 0; margin-top: 4pt; }
+    .rb-recipe-kat { font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #e8823a; margin-bottom: 3pt; }
+    .rb-recipe-title { font-size: 20pt; font-weight: 700; line-height: 1.2; margin-bottom: 5pt; }
+    .rb-recipe-meta { font-size: 9pt; color: #666; }
+    .rb-recipe-img { width: 100%; max-height: 8cm; object-fit: cover; border-radius: 4pt; margin: 0.4cm 0; page-break-inside: avoid; }
+    .rb-recipe-desc { font-style: italic; color: #555; margin-bottom: 0.5cm; font-size: 10.5pt; line-height: 1.6; }
+    .rb-sub-h { font-size: 12pt; font-weight: 700; margin: 0.5cm 0 0.25cm; color: #1a1a1a; }
+    .rb-ing-table { width: 100%; border-collapse: collapse; font-size: 10pt; margin-bottom: 0.4cm; }
+    .rb-ing-table tr { border-bottom: 0.5pt solid #eee; page-break-inside: avoid; }
+    .rb-ing-table td { padding: 4pt 0; }
+    .rb-ing-amt { font-weight: 700; color: #e8823a; width: 100pt; }
+    .rb-steps { font-size: 10.5pt; line-height: 1.8; white-space: pre-wrap; color: #333; margin-bottom: 0.4cm; }
+    .rb-tags { display: flex; flex-wrap: wrap; gap: 4pt; margin-top: 0.3cm; }
+    .rb-tag { background: #f0f0f0; border-radius: 20pt; padding: 2pt 8pt; font-size: 8pt; color: #666; }
+    .rb-src { font-size: 8pt; color: #aaa; margin-top: 0.3cm; }
+    .rb-toc { padding-top: 0; }
+    </style>`;
+
+  area.innerHTML = printCss + coverHtml + tocHtml + recipePagesHtml;
+
+  // Open popup window for clean multi-page print
+  const popup = window.open('', '_blank', 'width=900,height=700');
+  if (!popup) { toast('Popup wurde blockiert — bitte Popups für diese Seite erlauben', 'err'); return; }
+
+  popup.document.write(`<!DOCTYPE html><html lang="de"><head>
+    <meta charset="UTF-8">
+    <title>${titel.replace(/</g,'&lt;')}</title>
+    ${printCss}
+  </head><body>
+    ${coverHtml}
+    ${tocHtml}
+    ${recipePagesHtml}
+  </body></html>`);
+  popup.document.close();
+
+  // Wait for images, then print
+  popup.onload = () => {
+    const imgs = popup.document.querySelectorAll('img');
+    if (!imgs.length) { popup.print(); return; }
+    let loaded = 0;
+    const tryPrint = () => { if (++loaded >= imgs.length) popup.print(); };
+    imgs.forEach(img => {
+      if (img.complete) tryPrint();
+      else { img.onload = tryPrint; img.onerror = tryPrint; }
+    });
+  };
+  // Fallback timeout
+  setTimeout(() => { try { popup.print(); } catch(e) {} }, 3000);
+}
+
+// Init when view becomes active
+const _origShowView = showView;
+// override handled inline via initRezeptbuch call
 
 // ═══════════════════════ UTIL
 function x(s) {
