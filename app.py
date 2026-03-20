@@ -825,6 +825,8 @@ Ablauf:
 ]
 
 Regeln:
+- Antworte AUSSCHLIESSLICH mit dem JSON-Array — KEIN Text davor oder danach, KEINE Markdown-Backticks, KEINE Erklärungen
+- Deine gesamte Antwort muss mit [ beginnen und mit ] enden
 - Gib IMMER ein Array zurück, auch wenn nur 1 Ergebnis vorhanden
 - schwierigkeit: nur "leicht", "mittel" oder "schwer"
 - kategorie: Frühstück | Vorspeise | Hauptgericht | Dessert | Snack | Getränk | Backen | Salat | Suppe | Sonstiges
@@ -838,65 +840,81 @@ def rezept_suche(body: dict):
         raise HTTPException(400, "Anfrage fehlt")
     check_api_key()
 
-    claude = Anthropic(api_key=ANTHROPIC_API_KEY)
-    msg = claude.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=5000,
-        system=SEARCH_SYSTEM,
-        tools=[{"type": "web_search_20250305", "name": "web_search"}],
-        messages=[{"role": "user", "content": f"Suche 2-3 Rezepte für: {anfrage}"}]
-    )
+    # Haiku 4.5 supports web search fully — günstig und schnell
+    search_model = "claude-haiku-4-5-20251001"
 
-    # Collect all content blocks and handle tool use loop
+    claude = Anthropic(api_key=ANTHROPIC_API_KEY)
+
     messages = [{"role": "user", "content": f"Suche 2-3 Rezepte für: {anfrage}"}]
     final_text = ""
 
-    current_msg = msg
-    for _ in range(4):  # max 4 tool rounds
-        # Extract text from current response
-        for block in current_msg.content:
-            if getattr(block, "type", None) == "text":
-                final_text = block.text
-
-        if current_msg.stop_reason != "tool_use":
-            break
-
-        # Build tool results and continue
-        messages.append({"role": "assistant", "content": current_msg.content})
-        tool_results = [
-            {"type": "tool_result", "tool_use_id": b.id, "content": "Suche durchgeführt"}
-            for b in current_msg.content if getattr(b, "type", None) == "tool_use"
-        ]
-        messages.append({"role": "user", "content": tool_results})
-
-        current_msg = claude.messages.create(
-            model=CLAUDE_MODEL,
+    # Agentic loop: handle tool use rounds automatically
+    for round_num in range(6):
+        response = claude.messages.create(
+            model=search_model,
             max_tokens=5000,
             system=SEARCH_SYSTEM,
             tools=[{"type": "web_search_20250305", "name": "web_search"}],
             messages=messages
         )
 
-    if not final_text:
-        raise HTTPException(500, "Keine Antwort von Claude erhalten")
+        # Collect text from this round
+        for block in response.content:
+            if getattr(block, "type", None) == "text" and block.text.strip():
+                final_text = block.text
 
-    # Parse — expect array
+        # If Claude is done, exit loop
+        if response.stop_reason == "end_turn":
+            break
+
+        # If Claude used web_search, feed results back and continue
+        if response.stop_reason == "tool_use":
+            messages.append({"role": "assistant", "content": response.content})
+            # The web_search tool results are already in response.content as tool_result blocks
+            # We need to pass them back as user message
+            tool_results = []
+            for block in response.content:
+                if getattr(block, "type", None) == "tool_use":
+                    # Find matching tool_result in content
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": f"Suchergebnisse für '{block.input.get('query', anfrage)}' wurden abgerufen."
+                    })
+            if tool_results:
+                messages.append({"role": "user", "content": tool_results})
+            continue
+
+        break  # any other stop reason
+
+    if not final_text:
+        raise HTTPException(500, "Keine Antwort erhalten — bitte erneut versuchen")
+
+    # Parse — expect JSON array (robust: strip markdown, find first [...] or {...})
     try:
         raw = final_text.strip()
-        raw = re.sub(r'^```json\s*', '', raw)
-        raw = re.sub(r'^```\s*', '', raw)
-        raw = re.sub(r'\s*```$', '', raw)
-        results = json.loads(raw)
+        # Strip markdown fences anywhere in the text
+        raw = re.sub(r"```json\s*", "", raw)
+        raw = re.sub(r"```\s*",     "", raw)
+        raw = raw.strip()
+        # Try direct parse first
+        try:
+            results = json.loads(raw)
+        except json.JSONDecodeError:
+            # Extract first JSON array or object
+            m = re.search(r'(\[.*\]|\{.*\})', raw, re.DOTALL)
+            if m:
+                results = json.loads(m.group(1))
+            else:
+                raise ValueError("Kein JSON gefunden")
         if isinstance(results, dict):
-            results = [results]  # wrap single object
+            results = [results]
     except Exception as e:
-        raise HTTPException(500, f"Antwort konnte nicht geparst werden: {e}")
+        raise HTTPException(500, f"Antwort konnte nicht geparst werden: {e}. Antwort war: {final_text[:300]}")
 
-    # Check for error
     if len(results) == 1 and results[0].get("fehler"):
         raise HTTPException(422, results[0]["fehler"])
 
-    # Filter out any error objects
     results = [r for r in results if not r.get("fehler")]
     if not results:
         raise HTTPException(422, "Keine passenden Rezepte gefunden")

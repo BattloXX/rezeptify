@@ -3870,11 +3870,16 @@ async function botSaveIdx(i) {
   if (!BOT.data?.[i]) return;
   try {
     await api('/api/rezepte', { method: 'POST', body: JSON.stringify(BOT.data[i]) });
-    toast('Rezept gespeichert ✓', 'ok');
-    botClear();
-    document.getElementById('bot-input').value = '';
+    toast('Rezept gespeichert ✓ — weitere Rezepte können noch gespeichert werden', 'ok');
+    // Mark card as saved visually, but keep results visible
+    const card = document.getElementById('bot-card-' + i);
+    if (card) {
+      card.style.opacity = '0.5';
+      card.style.pointerEvents = 'none';
+      const footer = card.querySelector('.bot-card-footer');
+      if (footer) footer.innerHTML = '<span style="font-size:0.82rem;color:#065f46;font-weight:600;padding:4px 0">✓ Gespeichert</span>';
+    }
     loadGrid(); loadTags();
-    showView('home');
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
