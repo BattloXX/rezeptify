@@ -1727,6 +1727,190 @@ select.fc { cursor: pointer; }
 #rb-print-area { display: none; }
 
 /* ════════════════════════════════════════════════════
+   REZEPT-SUCHBOT
+════════════════════════════════════════════════════ */
+.bot-header {
+  background: linear-gradient(135deg, #0f1a0a, #1a2d10);
+  border-radius: var(--r-lg);
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.25rem;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(74,124,53,0.25);
+}
+.bot-header::before {
+  content: '🔍';
+  position: absolute;
+  right: 1.5rem; top: 50%;
+  transform: translateY(-50%);
+  font-size: 3rem;
+  opacity: 0.15;
+}
+.bot-header h2 { font-family: var(--serif); font-size: 1.35rem; font-weight: 700; color: var(--n-0); margin-bottom: 0.3rem; }
+.bot-header p  { font-size: 0.86rem; color: rgba(255,255,255,0.45); line-height: 1.55; }
+
+/* Chips for quick suggestions */
+.bot-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 0.85rem;
+}
+.bot-chip {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 13px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--n-600);
+  cursor: pointer;
+  transition: all var(--t);
+}
+.bot-chip:hover { background: var(--n-950); color: white; border-color: var(--n-950); }
+
+/* Search input area */
+.bot-input-row {
+  display: flex;
+  gap: 0.65rem;
+  margin-bottom: 0.5rem;
+}
+.bot-textarea {
+  width: 100%;
+  min-height: 60px;
+  max-height: 300px;
+  padding: 0.85rem 1rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r);
+  font-family: var(--sans);
+  font-size: 0.93rem;
+  color: var(--text);
+  background: var(--surface);
+  resize: none;
+  overflow-y: hidden;
+  transition: border-color var(--t);
+  line-height: 1.6;
+  display: block;
+  box-sizing: border-box;
+}
+.bot-textarea:focus { outline: none; border-color: var(--leaf); }
+.bot-textarea::placeholder { color: var(--muted); }
+
+/* Status display */
+.bot-status {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--n-50);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  font-size: 0.85rem;
+  color: var(--n-600);
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+.bot-status.on { display: flex; animation: fadeUp 0.2s var(--ease); }
+.bot-spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--leaf);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* Results grid */
+.bot-results {
+  display: none;
+  margin-top: 1rem;
+  animation: fadeUp 0.25s var(--ease);
+}
+.bot-results.on { display: block; }
+.bot-results-hdr {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bot-results-hdr::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.bot-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+.bot-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow var(--t), border-color var(--t);
+}
+.bot-card:hover { box-shadow: 0 6px 20px var(--shadow); border-color: var(--leaf); }
+.bot-card.selected { border-color: var(--leaf); border-width: 2px; box-shadow: 0 0 0 3px rgba(74,124,53,0.12); }
+.bot-card-rank {
+  background: var(--leaf);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  text-align: center;
+  letter-spacing: 0.4px;
+}
+.bot-card-body { padding: 1rem; flex: 1; }
+.bot-card-kat   { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent); margin-bottom: 4px; }
+.bot-card-title { font-family: var(--serif); font-size: 1.05rem; font-weight: 700; line-height: 1.3; margin-bottom: 0.5rem; }
+.bot-card-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 0.65rem; }
+.bot-card-chip  { background: var(--n-100); border-radius: 20px; padding: 2px 8px; font-size: 0.7rem; font-weight: 600; color: var(--n-600); }
+.bot-card-desc  { font-size: 0.82rem; color: var(--n-600); line-height: 1.55; margin-bottom: 0.65rem; font-style: italic; }
+.bot-suchinfo   { font-size: 0.75rem; color: var(--muted); background: var(--n-50); border-radius: 7px; padding: 6px 10px; margin-bottom: 0.65rem; display: flex; gap: 5px; line-height: 1.4; }
+.bot-suchinfo svg { width: 13px; height: 13px; flex-shrink: 0; margin-top: 1px; }
+.bot-ing-preview { margin-bottom: 0.65rem; }
+.bot-ing-row    { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--n-100); font-size: 0.82rem; }
+.bot-ing-amt    { font-weight: 700; color: var(--accent); min-width: 65px; font-size: 0.78rem; flex-shrink: 0; }
+.bot-card-footer {
+  padding: 10px 12px;
+  background: var(--n-50);
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* History */
+.bot-history { margin-top: 1.5rem; }
+.bot-history-title { font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 0.6rem; }
+.bot-history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  margin-bottom: 5px;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--n-600);
+  transition: all var(--t);
+}
+.bot-history-item:hover { border-color: var(--leaf); color: var(--text); }
+.bot-history-item svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--muted); }
+
+/* ════════════════════════════════════════════════════
    SIDENAV — hidden by default (mobile first)
 ════════════════════════════════════════════════════ */
 .sidenav      { display: none; }
@@ -1906,6 +2090,10 @@ select.fc { cursor: pointer; }
   <button class="snav-item" id="snav-buch" onclick="showView('buch')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
     Rezeptbuch
+  </button>
+  <button class="snav-item" id="snav-bot" onclick="showView('bot')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+    Suchbot
   </button>
   <div class="snav-divider"></div>
   <button class="snav-new" onclick="openNewForm()">
@@ -2115,6 +2303,47 @@ select.fc { cursor: pointer; }
     </div>
   </section>
 
+  <!-- VIEW: Suchbot -->
+  <section class="view" id="view-bot">
+    <div class="bot-header">
+      <h2>Rezept-Suchbot</h2>
+      <p>Beschreibe was du kochen möchtest — der Bot sucht im Internet nach dem besten Rezept mit österreichischen Zutaten.</p>
+    </div>
+
+    <div class="bot-chips">
+      <span class="bot-chip" onclick="botSetPrompt('Einfaches vegetarisches Abendessen für 4 Personen, schnell unter 30 Minuten')">🥗 Vegetarisch, schnell</span>
+      <span class="bot-chip" onclick="botSetPrompt('Gesundes Frühstück für Kinder, ohne Zucker')">🌅 Kinderfrühstück</span>
+      <span class="bot-chip" onclick="botSetPrompt('Traditionelles österreichisches Hauptgericht, klassisch')">🇦🇹 Österreichisch</span>
+      <span class="bot-chip" onclick="botSetPrompt('Einfacher Kuchen zum Backen mit Kindern, keine exotischen Zutaten')">🥐 Backen mit Kindern</span>
+      <span class="bot-chip" onclick="botSetPrompt('Gesunde Suppe für den Winter, vegan')">🍜 Vegane Suppe</span>
+      <span class="bot-chip" onclick="botSetPrompt('Grill-Rezept für Spareribs oder Steaks')">🔥 Grillen</span>
+    </div>
+
+    <textarea class="bot-textarea" id="bot-input"
+      placeholder="z.B. &quot;Ein einfaches veganes Abendessen für 2 Personen, keine Nüsse, unter 45 Minuten&quot;"
+      oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
+      rows="3"></textarea>
+    <button class="btn btn-primary btn-full" id="bot-btn" onclick="botSearch()" style="margin-top:0.65rem">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Rezept suchen
+    </button>
+
+    <div class="bot-status" id="bot-status">
+      <div class="bot-spinner"></div>
+      <span id="bot-status-text">Claude sucht im Internet …</span>
+    </div>
+
+    <div class="bot-results" id="bot-results">
+      <div class="bot-results-hdr" id="bot-results-hdr">Gefundene Rezepte</div>
+      <div class="bot-results-grid" id="bot-results-grid"></div>
+    </div>
+
+    <div class="bot-history" id="bot-history" style="display:none">
+      <div class="bot-history-title">Zuletzt gesucht</div>
+      <div id="bot-history-list"></div>
+    </div>
+  </section>
+
 </div><!-- /content -->
 
 <!-- ══ BOTTOM NAV ══ -->
@@ -2130,6 +2359,10 @@ select.fc { cursor: pointer; }
   <button class="bnav-item" id="nav-buch" onclick="showView('buch')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
     Rezeptbuch
+  </button>
+  <button class="bnav-item" id="nav-bot" onclick="showView('bot')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+    Suchbot
   </button>
 </nav>
 
@@ -3507,6 +3740,150 @@ async function exportRezeptbuch() {
 // Init when view becomes active
 const _origShowView = showView;
 // override handled inline via initRezeptbuch call
+
+// ═══════════════════════ SUCHBOT
+const BOT = { data: null, history: [] };
+
+function botSetPrompt(text) {
+  document.getElementById('bot-input').value = text;
+  document.getElementById('bot-input').focus();
+}
+
+function botClear() {
+  BOT.data = null;
+  document.getElementById('bot-results').classList.remove('on');
+  document.getElementById('bot-status').classList.remove('on');
+}
+
+async function botSearch() {
+  const anfrage = document.getElementById('bot-input').value.trim();
+  if (!anfrage) { toast('Bitte eine Beschreibung eingeben', 'err'); return; }
+
+  const btn = document.getElementById('bot-btn');
+  btn.disabled = true;
+  BOT.data = null;
+  document.getElementById('bot-results').classList.remove('on');
+
+  const statusEl   = document.getElementById('bot-status');
+  const statusText = document.getElementById('bot-status-text');
+  statusEl.classList.add('on');
+  const msgs = [
+    'Claude sucht im Internet …',
+    'Bewertungen werden verglichen …',
+    'Besten Rezepte werden ausgewählt …',
+    'Rezepte werden aufbereitet …'
+  ];
+  let mi = 0;
+  statusText.textContent = msgs[0];
+  const ticker = setInterval(() => { statusText.textContent = msgs[Math.min(++mi, msgs.length-1)]; }, 3500);
+
+  try {
+    const results = await api('/api/rezept-suche', {
+      method: 'POST',
+      body: JSON.stringify({ anfrage })
+    });
+    BOT.data = results; // array
+
+    // History: use first result title
+    BOT.history.unshift({ anfrage, titel: results[0]?.titel || '?' });
+    if (BOT.history.length > 5) BOT.history.pop();
+    renderBotHistory();
+
+    renderBotResults(results);
+    document.getElementById('bot-results').classList.add('on');
+
+  } catch(e) {
+    toast('Suche fehlgeschlagen: ' + e.message, 'err');
+  } finally {
+    clearInterval(ticker);
+    statusEl.classList.remove('on');
+    btn.disabled = false;
+  }
+}
+
+const RANK_LABELS = ['🥇 Beste Wahl', '🥈 Gute Alternative', '🥉 Weitere Option'];
+
+function renderBotResults(results) {
+  const grid = document.getElementById('bot-results-grid');
+  const hdr  = document.getElementById('bot-results-hdr');
+  hdr.firstChild.textContent = `${results.length} Rezept${results.length > 1 ? 'e' : ''} gefunden`;
+
+  grid.innerHTML = results.map((r, i) => {
+    const gz = (r.zeit_vorb||0) + (r.zeit_koch||0);
+    const chips = [
+      gz ? gz+' Min.' : null,
+      r.portionen ? r.portionen+' Port.' : null,
+      r.schwierigkeit,
+      r.kalorien_pro_portion ? r.kalorien_pro_portion+' kcal/P.' : null
+    ].filter(Boolean).map(c => `<span class="bot-card-chip">${x(c)}</span>`).join('');
+
+    const zs = (r.zutaten||[]).slice(0,5).map(z =>
+      `<div class="bot-ing-row"><span class="bot-ing-amt">${x(z.menge||'')} ${x(z.einheit||'')}</span><span>${x(z.name)}</span></div>`
+    ).join('');
+    const more = (r.zutaten||[]).length > 5
+      ? `<div style="font-size:0.76rem;color:var(--muted);padding:4px 0">… +${r.zutaten.length-5} weitere</div>` : '';
+
+    const srcHtml = r.quelle_url
+      ? `<a href="${x(r.quelle_url)}" target="_blank" rel="noopener" class="quelle-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Quelle</a>` : '';
+
+    const suchinfoHtml = r.suchinfo
+      ? `<div class="bot-suchinfo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          ${x(r.suchinfo)}</div>` : '';
+
+    return `<div class="bot-card" id="bot-card-${i}">
+      <div class="bot-card-rank">${RANK_LABELS[i] || '📌 Option ' + (i+1)}</div>
+      <div class="bot-card-body">
+        ${r.kategorie ? `<div class="bot-card-kat">${x(r.kategorie)}</div>` : ''}
+        <div class="bot-card-title">${x(r.titel)}</div>
+        <div class="bot-card-chips">${chips}</div>
+        ${r.beschreibung ? `<p class="bot-card-desc">${x(r.beschreibung)}</p>` : ''}
+        ${suchinfoHtml}
+        ${zs ? `<div class="bot-ing-preview">${zs}${more}</div>` : ''}
+      </div>
+      <div class="bot-card-footer">
+        <button class="btn btn-accent" style="flex:1;font-size:0.8rem;height:36px" onclick="botSaveIdx(${i})">💾 Speichern</button>
+        <button class="btn btn-ghost"  style="font-size:0.8rem;height:36px" onclick="botEditIdx(${i})">✏️ Bearbeiten</button>
+        ${srcHtml ? `<span style="display:flex;align-items:center">${srcHtml}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderBotHistory() {
+  if (!BOT.history.length) return;
+  const wrap = document.getElementById('bot-history');
+  const list = document.getElementById('bot-history-list');
+  wrap.style.display = '';
+  list.innerHTML = BOT.history.map(h =>
+    `<div class="bot-history-item" onclick="botSetPrompt('${x(h.anfrage)}')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${x(h.anfrage)}</span>
+      <span style="font-size:0.72rem;color:var(--accent);white-space:nowrap">→ ${x(h.titel)}</span>
+    </div>`
+  ).join('');
+}
+
+async function botSaveIdx(i) {
+  if (!BOT.data?.[i]) return;
+  try {
+    await api('/api/rezepte', { method: 'POST', body: JSON.stringify(BOT.data[i]) });
+    toast('Rezept gespeichert ✓', 'ok');
+    botClear();
+    document.getElementById('bot-input').value = '';
+    loadGrid(); loadTags();
+    showView('home');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+function botEditIdx(i) {
+  if (!BOT.data?.[i]) return;
+  const r = BOT.data[i];
+  botClear();
+  openNewForm(r);
+}
 
 // ═══════════════════════ UTIL
 function x(s) {

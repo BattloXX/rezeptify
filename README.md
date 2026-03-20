@@ -155,3 +155,21 @@ Ca. **$0.003 pro KI-Analyse** mit Claude Haiku.
 
 **iOS (Safari):** Teilen ⎙ → „Zum Home-Bildschirm"  
 **Android (Chrome):** Installations-Banner antippen oder Menü → „App installieren"
+
+## Rezept-Suchbot
+
+Der Suchbot verwendet Claude mit Web Search um passende Rezepte im Internet zu finden.
+
+**Funktionsweise:**
+1. Freitext-Beschreibung eingeben (Ernährung, Zutaten, Zeit, Personenzahl, etc.)
+2. Claude durchsucht deutschsprachige Rezeptseiten (Chefkoch, Lecker, gutekueche.at, etc.)
+3. Die **2–3 besten Ergebnisse** werden nach Bewertungen gefiltert und vollständig extrahiert
+4. Jedes Ergebnis kann direkt gespeichert oder bearbeitet werden
+
+**Darstellung:** 🥇 Beste Wahl · 🥈 Gute Alternative · 🥉 Weitere Option
+
+**Bevorzugte Quellen:** chefkoch.de, lecker.de, küchengötter.de, gutekueche.at, ichkoche.at, rezeptwelt.at
+
+**Kosten:** Ca. $0.01–0.02 pro Suche (Web Search + längerer Kontext)
+
+**Endpunkt:** `POST /api/rezept-suche` → gibt JSON-Array mit 2–3 Rezepten zurück

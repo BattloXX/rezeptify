@@ -785,6 +785,125 @@ async def analysiere_bild(file: UploadFile = File(...)):
     result["quelle_typ"] = "pdf-import" if ext == ".pdf" else "bild-import"
     return result
 
+# ── REZEPT SUCHBOT ───────────────────────────────────────────────────────────
+SEARCH_SYSTEM = """Du bist ein Rezept-Assistent für die Familie Battlogg in Vorarlberg, Österreich.
+
+Deine Aufgabe: Suche 2-3 der besten Rezepte im Internet basierend auf dem Wunsch des Benutzers.
+
+Wichtige Kriterien:
+- Nur Rezepte mit guten Bewertungen (mindestens 4 Sterne oder sehr positiven Kommentaren)
+- Bevorzuge deutschsprachige Quellen: chefkoch.de, lecker.de, küchengötter.de, gutekueche.at, ichkoche.at, rezeptwelt.at
+- Ernährungseinschränkungen und Wünsche des Benutzers beachten
+- Zutaten im deutschsprachigen Raum erhältlich (keine exotischen US-Spezialitäten)
+
+Ablauf:
+1. Suche im Web nach passenden Rezepten
+2. Wähle die 2-3 besten basierend auf Bewertungen und Relevanz
+3. Extrahiere jedes Rezept vollständig
+4. Antworte NUR mit einem validen JSON-Array (kein Markdown, keine Erklärungen):
+
+[
+  {
+    "titel": "Rezeptname",
+    "beschreibung": "Kurzbeschreibung (1-2 Sätze)",
+    "zutaten": [
+      {"menge": "200", "einheit": "g", "name": "Mehl"},
+      {"menge": "3", "einheit": "EL", "name": "Olivenöl"}
+    ],
+    "zubereitung": "Schritt-für-Schritt Zubereitung",
+    "portionen": 4,
+    "zeit_vorb": 15,
+    "zeit_koch": 30,
+    "schwierigkeit": "leicht",
+    "kategorie": "Hauptgericht",
+    "tags": ["vegetarisch", "schnell"],
+    "kalorien_pro_portion": 450,
+    "quelle_url": "https://...",
+    "quelle_typ": "web",
+    "suchinfo": "Bewertung und Quelle, z.B. '4.8 Sterne auf Chefkoch, über 500 Bewertungen'"
+  }
+]
+
+Regeln:
+- Gib IMMER ein Array zurück, auch wenn nur 1 Ergebnis vorhanden
+- schwierigkeit: nur "leicht", "mittel" oder "schwer"
+- kategorie: Frühstück | Vorspeise | Hauptgericht | Dessert | Snack | Getränk | Backen | Salat | Suppe | Sonstiges
+- Antworte auf Deutsch
+- Falls kein passendes Rezept: [{"fehler": "Kein passendes Rezept gefunden: [Grund]"}]"""
+
+@app.post("/api/rezept-suche")
+def rezept_suche(body: dict):
+    anfrage = body.get("anfrage", "").strip()
+    if not anfrage:
+        raise HTTPException(400, "Anfrage fehlt")
+    check_api_key()
+
+    claude = Anthropic(api_key=ANTHROPIC_API_KEY)
+    msg = claude.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=5000,
+        system=SEARCH_SYSTEM,
+        tools=[{"type": "web_search_20250305", "name": "web_search"}],
+        messages=[{"role": "user", "content": f"Suche 2-3 Rezepte für: {anfrage}"}]
+    )
+
+    # Collect all content blocks and handle tool use loop
+    messages = [{"role": "user", "content": f"Suche 2-3 Rezepte für: {anfrage}"}]
+    final_text = ""
+
+    current_msg = msg
+    for _ in range(4):  # max 4 tool rounds
+        # Extract text from current response
+        for block in current_msg.content:
+            if getattr(block, "type", None) == "text":
+                final_text = block.text
+
+        if current_msg.stop_reason != "tool_use":
+            break
+
+        # Build tool results and continue
+        messages.append({"role": "assistant", "content": current_msg.content})
+        tool_results = [
+            {"type": "tool_result", "tool_use_id": b.id, "content": "Suche durchgeführt"}
+            for b in current_msg.content if getattr(b, "type", None) == "tool_use"
+        ]
+        messages.append({"role": "user", "content": tool_results})
+
+        current_msg = claude.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=5000,
+            system=SEARCH_SYSTEM,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=messages
+        )
+
+    if not final_text:
+        raise HTTPException(500, "Keine Antwort von Claude erhalten")
+
+    # Parse — expect array
+    try:
+        raw = final_text.strip()
+        raw = re.sub(r'^```json\s*', '', raw)
+        raw = re.sub(r'^```\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
+        results = json.loads(raw)
+        if isinstance(results, dict):
+            results = [results]  # wrap single object
+    except Exception as e:
+        raise HTTPException(500, f"Antwort konnte nicht geparst werden: {e}")
+
+    # Check for error
+    if len(results) == 1 and results[0].get("fehler"):
+        raise HTTPException(422, results[0]["fehler"])
+
+    # Filter out any error objects
+    results = [r for r in results if not r.get("fehler")]
+    if not results:
+        raise HTTPException(422, "Keine passenden Rezepte gefunden")
+
+    return results
+
+
 # ── STATIC + SPA ──────────────────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
