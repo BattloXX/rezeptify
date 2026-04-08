@@ -1673,11 +1673,12 @@ select.fc { cursor: pointer; }
     box-shadow: 0 4px 16px rgba(232,130,58,0.3);
   }
   .snav-new:hover { transform: scale(1.02); box-shadow: 0 6px 20px rgba(232,130,58,0.4); }
+  .snav-new-active { box-shadow: 0 0 0 2px var(--a-400), 0 4px 16px rgba(232,130,58,0.35) !important; }
   .snav-new .material-symbols-outlined { font-size: 18px; }
 
   /* On desktop the sidebar has the brand — hide duplicate topbar logo */
   .topbar .logo { display: none; }
-  /* topbar-btn kept visible on desktop — it opens KI Import */
+  .topbar-btn   { display: none; } /* KI Import ist in der Sidebar-Taste */
 
   /* Grid */
   .grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1.25rem; }
@@ -1721,7 +1722,7 @@ select.fc { cursor: pointer; }
   .form-scroll { padding: 1rem 1rem; }
   .z-row { grid-template-columns: 60px 60px 1fr 28px; }
   .z-header { grid-template-columns: 60px 60px 1fr 28px; }
-  .tab-btn span { display: none; }
+  .tab-btn .tab-label { display: none; }
   .import-header { padding: 1.25rem 1.25rem; }
   .import-header h2 { font-size: 1.2rem; }
 }
@@ -2128,10 +2129,14 @@ select.fc { cursor: pointer; }
     <span class="material-symbols-outlined">smart_toy</span>
     Suchbot
   </button>
-  <div class="snav-divider"></div>
-  <button class="snav-new" onclick="openNewForm()">
-    <span class="material-symbols-outlined">add</span>
+  <button class="snav-item" id="snav-new-recipe" onclick="openNewForm()">
+    <span class="material-symbols-outlined">add_circle</span>
     Neues Rezept
+  </button>
+  <div class="snav-divider"></div>
+  <button class="snav-new" onclick="showView('import')">
+    <span class="material-symbols-outlined">auto_awesome</span>
+    KI Import
   </button>
 </nav>
 
@@ -2196,11 +2201,11 @@ select.fc { cursor: pointer; }
     <div class="tab-bar">
       <button class="tab-btn on" id="tab-url" onclick="switchTab('url')">
         <span class="material-symbols-outlined">link</span>
-        <span>URL</span>
+        <span class="tab-label">URL</span>
       </button>
       <button class="tab-btn" id="tab-file" onclick="switchTab('file')">
         <span class="material-symbols-outlined">add_a_photo</span>
-        <span>Bild / PDF</span>
+        <span class="tab-label">Bild / PDF</span>
       </button>
     </div>
 
@@ -2621,9 +2626,9 @@ function showView(name) {
   document.getElementById('view-' + name).classList.add('on');
   document.getElementById('nav-' + name)?.classList.add('on');
   document.getElementById('snav-' + name)?.classList.add('on');
-  // Highlight topbar KI Import button when in import view
-  const topbarImportBtn = document.getElementById('topbar-import-btn');
-  if (topbarImportBtn) topbarImportBtn.style.background = name === 'import' ? 'var(--a-500)' : '';
+  // Highlight snav-new (KI Import) when import view is active
+  const snavNew = document.querySelector('.snav-new');
+  if (snavNew) snavNew.classList.toggle('snav-new-active', name === 'import');
   if (name === 'buch') initRezeptbuch();
 }
 
