@@ -1304,6 +1304,23 @@ select.fc { cursor: pointer; }
   margin-bottom: -2px;
   padding-left: 2px;
 }
+.z-arrow-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all var(--t);
+  opacity: 0.5;
+}
+.z-arrow-btn:hover { opacity: 1; color: var(--accent); }
+.z-arrow-btn:disabled { opacity: 0.2; cursor: not-allowed; }
 
 /* Tag input */
 .tag-input-wrap {
@@ -3272,15 +3289,35 @@ function addZRow(z={}) {
   d.innerHTML = `<input class="z-inp" placeholder="200" value="${x(z.menge||'')}" data-f="menge">
     <input class="z-inp" placeholder="g" value="${x(z.einheit||'')}" data-f="einheit">
     <input class="z-inp" placeholder="Mehl" value="${x(z.name||'')}" data-f="name">
-    <button class="z-rm" onclick="this.parentElement.remove()" title="Entfernen">×</button>`;
+    <div style="display:flex;gap:2px">
+      <button class="z-arrow-btn" onclick="moveZItem(this,-1)" title="Nach oben">▲</button>
+      <button class="z-arrow-btn" onclick="moveZItem(this,1)" title="Nach unten">▼</button>
+      <button class="z-rm" onclick="this.parentElement.parentElement.remove()" title="Entfernen">×</button>
+    </div>`;
   document.getElementById('z-form').appendChild(d);
 }
 function addZGroup(z={}) {
   const d = document.createElement('div');
   d.className = 'z-group-row';
   d.innerHTML = `<input class="z-group-inp" placeholder="Gruppenname (z.B. Für den Teig)" value="${x(z.gruppe||'')}" data-f="gruppe">
-    <button class="z-rm" onclick="this.parentElement.remove()" title="Gruppe entfernen">×</button>`;
+    <div style="display:flex;gap:2px">
+      <button class="z-arrow-btn" onclick="moveZItem(this,-1)" title="Nach oben">▲</button>
+      <button class="z-arrow-btn" onclick="moveZItem(this,1)" title="Nach unten">▼</button>
+      <button class="z-rm" onclick="this.parentElement.parentElement.remove()" title="Entfernen">×</button>
+    </div>`;
   document.getElementById('z-form').appendChild(d);
+}
+function moveZItem(btn, direction) {
+  const row = btn.closest('.z-row, .z-group-row');
+  if (!row) return;
+  const sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
+  if (sibling && (sibling.classList.contains('z-row') || sibling.classList.contains('z-group-row'))) {
+    if (direction < 0) {
+      row.parentElement.insertBefore(row, sibling);
+    } else {
+      row.parentElement.insertBefore(sibling, row);
+    }
+  }
 }
 function getZRows() {
   return Array.from(document.querySelectorAll('#z-form .z-row, #z-form .z-group-row')).map(r => {

@@ -817,6 +817,10 @@ def analysiere_url(body: dict):
             if p.exists(): p.unlink()
         raise HTTPException(422, result["fehler"])
 
+    # Fallback: if no image was extracted from HTML, search the web
+    if not downloaded_image:
+        downloaded_image = search_recipe_image(result.get("titel", ""))
+
     result.update({"quelle_url": url, "quelle_typ": quelle_typ,
                    "downloaded_image": downloaded_image})
     return result
