@@ -18,7 +18,7 @@ import pymysql.cursors
 import httpx
 from bs4 import BeautifulSoup
 from anthropic import Anthropic
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 
 from config import (
     BASE_DIR, UPLOAD_DIR,
@@ -152,22 +152,14 @@ def make_slug(titel: str, rid: int = None) -> str:
         s = f"{s}-{rid}"
     return s or f"rezept-{rid}"
 
-def ensure_slug(conn, rid: int, titel: str):
-    """Set slug for a recipe if it doesn't have one yet."""
-    with conn.cursor() as cur:
-        cur.execute("SELECT slug FROM rezepte WHERE id=%s", (rid,))
-        row = cur.fetchone()
-        if row and not row.get("slug"):
-            slug = make_slug(titel, rid)
-            cur.execute("UPDATE rezepte SET slug=%s WHERE id=%s", (slug, rid))
-
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title=APP_TITLE, docs_url="/api/docs" if DEBUG else None, redoc_url=None)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-@app.on_event("startup")
-def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     init_db()
+    yield
+
+app = FastAPI(title=APP_TITLE, docs_url="/api/docs" if DEBUG else None, redoc_url=None, lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def parse_json_field(val):
@@ -193,11 +185,40 @@ def get_bilder(cur, rezept_id: int) -> list:
              "url": f"/static/uploads/{r['dateiname']}",
              "ist_haupt": bool(r["ist_haupt"])} for r in cur.fetchall()]
 
+def get_bilder_batch(cur, rezept_ids: list) -> dict:
+    """Load images for multiple recipes in one query. Returns {rezept_id: [bilder]}."""
+    if not rezept_ids:
+        return {}
+    placeholders = ','.join(['%s'] * len(rezept_ids))
+    cur.execute(
+        f"SELECT id, rezept_id, dateiname, ist_haupt FROM bilder "
+        f"WHERE rezept_id IN ({placeholders}) ORDER BY ist_haupt DESC, id",
+        rezept_ids
+    )
+    result: dict = {}
+    for r in cur.fetchall():
+        rid = r["rezept_id"]
+        result.setdefault(rid, []).append({
+            "id": r["id"], "dateiname": r["dateiname"],
+            "url": f"/static/uploads/{r['dateiname']}",
+            "ist_haupt": bool(r["ist_haupt"])
+        })
+    return result
+
 def enrich(row: dict, cur) -> dict:
     row = clean_row(row)
     row["bilder"]     = get_bilder(cur, row["id"])
     row["haupt_bild"] = next((b["url"] for b in row["bilder"] if b["ist_haupt"]), None)
     return row
+
+# ── Claude client (lazy singleton) ───────────────────────────────────────────
+_claude: Optional[Anthropic] = None
+
+def get_claude() -> Anthropic:
+    global _claude
+    if _claude is None:
+        _claude = Anthropic(api_key=ANTHROPIC_API_KEY)
+    return _claude
 
 # ── Image resize settings ────────────────────────────────────────────────────
 IMG_MAX_PX   = 1600   # Max width or height in pixels
@@ -320,6 +341,33 @@ def extract_best_image(html: str, page_url: str) -> Optional[str]:
 
     return None
 
+def search_recipe_image(titel: str) -> Optional[str]:
+    """Search chefkoch.de for a recipe image by title. Returns saved filename or None."""
+    if not titel or not titel.strip():
+        return None
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "de-DE,de;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+        with httpx.Client(follow_redirects=True, timeout=15.0, headers=headers) as client:
+            # Search chefkoch.de for the recipe title
+            resp = client.get("https://www.chefkoch.de/suche.php", params={"suche": titel.strip()})
+            html = resp.text
+            # Find first recipe detail URL
+            matches = re.findall(r'href="(https://www\.chefkoch\.de/rezepte/\d+/[^"?#]+)"', html)
+            if not matches:
+                return None
+            recipe_url = matches[0]
+            resp2 = client.get(recipe_url)
+            img_url = extract_best_image(resp2.text[:30000], recipe_url)
+            if img_url:
+                return download_image(img_url, recipe_url)
+    except Exception:
+        pass
+    return None
+
 # ── Models ────────────────────────────────────────────────────────────────────
 class Zutat(BaseModel):
     menge:   Optional[str] = ""
@@ -377,7 +425,15 @@ def get_rezepte(
             total = cur.fetchone()["n"]
             cur.execute(f"SELECT r.* FROM rezepte r {w} ORDER BY {order} LIMIT %s OFFSET %s",
                         params + [limit, offset])
-            items = [enrich(r, cur) for r in cur.fetchall()]
+            rows = cur.fetchall()
+            # Batch-load all images in one query instead of N queries
+            bilder_map = get_bilder_batch(cur, [r["id"] for r in rows])
+            items = []
+            for row in rows:
+                row = clean_row(row)
+                row["bilder"]     = bilder_map.get(row["id"], [])
+                row["haupt_bild"] = next((b["url"] for b in row["bilder"] if b["ist_haupt"]), None)
+                items.append(row)
     return {"total": total, "items": items, "limit": limit, "offset": offset}
 
 
@@ -532,6 +588,33 @@ def set_haupt(bid: int):
             cur.execute("UPDATE bilder SET ist_haupt=1 WHERE id=%s", (bid,))
     return {"ok": True}
 
+
+@app.post("/api/rezepte/{rid}/fetch-bild")
+def fetch_bild_auto(rid: int):
+    """Auto-fetch an internet image for a recipe that has none."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM bilder WHERE rezept_id=%s", (rid,))
+            if cur.fetchone()["n"] > 0:
+                return {"ok": True, "skipped": True}
+            cur.execute("SELECT titel FROM rezepte WHERE id=%s", (rid,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Rezept nicht gefunden")
+            titel = row["titel"]
+
+    fname = search_recipe_image(titel)
+    if fname:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO bilder (rezept_id, dateiname, ist_haupt) VALUES (%s, %s, 1)",
+                    (rid, fname)
+                )
+        return {"ok": True, "dateiname": fname, "url": f"/static/uploads/{fname}"}
+    return {"ok": True, "skipped": True, "reason": "no image found"}
+
+
 # ── KATEGORIEN & TAGS & STATS ─────────────────────────────────────────────────
 @app.get("/api/kategorien")
 def get_kategorien():
@@ -681,7 +764,6 @@ def clean_html(html: str) -> str:
         return text[:15000]
     except Exception:
         # If BeautifulSoup fails for any reason, send raw text stripped of tags
-        import re
         text = re.sub(r'<[^>]+>', ' ', html)
         text = ' '.join(text.split())
         return text[:15000]
@@ -716,7 +798,7 @@ def analysiere_url(body: dict):
     elif "instagram.com" in url: quelle_typ = "instagram"
     elif any(x in url for x in ["chefkoch","allrecipes","lecker.de"]): quelle_typ = "rezeptseite"
 
-    claude = Anthropic(api_key=ANTHROPIC_API_KEY)
+    claude = get_claude()
     msg = claude.messages.create(
         model=CLAUDE_MODEL, max_tokens=2048,
         messages=[{"role": "user", "content": f"{PROMPT_URL}\n\n(URL: {url})\n---\n{clean_text}\n---"}]
@@ -749,7 +831,7 @@ async def analysiere_bild(file: UploadFile = File(...)):
     # PDF handling
     if ext == ".pdf":
         b64 = base64.standard_b64encode(data).decode()
-        claude = Anthropic(api_key=ANTHROPIC_API_KEY)
+        claude = get_claude()
         msg = claude.messages.create(
             model=CLAUDE_MODEL, max_tokens=2000,
             messages=[{"role": "user", "content": [
@@ -765,7 +847,7 @@ async def analysiere_bild(file: UploadFile = File(...)):
         if ext not in media_map:
             raise HTTPException(400, f"Format nicht unterstützt: {ext} (JPG, PNG, WebP, PDF)")
         b64 = base64.standard_b64encode(data).decode()
-        claude = Anthropic(api_key=ANTHROPIC_API_KEY)
+        claude = get_claude()
         msg = claude.messages.create(
             model=CLAUDE_MODEL, max_tokens=2000,
             messages=[{"role": "user", "content": [
@@ -783,6 +865,20 @@ async def analysiere_bild(file: UploadFile = File(...)):
         raise HTTPException(422, result["fehler"])
 
     result["quelle_typ"] = "pdf-import" if ext == ".pdf" else "bild-import"
+
+    # For image imports: pre-save the scan, then search for a nicer internet photo
+    if ext != ".pdf":
+        import_fname = resize_and_save(data, ext)
+        internet_fname = search_recipe_image(result.get("titel", ""))
+        if internet_fname:
+            # Internet photo = primary hero image, uploaded scan = secondary
+            result["downloaded_image"] = internet_fname
+            result["import_image"]     = import_fname
+        else:
+            # No internet photo found → use the scan itself as primary
+            result["downloaded_image"] = import_fname
+            result["import_image"]     = None   # marker: file already saved server-side
+
     return result
 
 # ── REZEPT SUCHBOT ───────────────────────────────────────────────────────────
@@ -843,7 +939,7 @@ def rezept_suche(body: dict):
     # Haiku 4.5 supports web search fully — günstig und schnell
     search_model = "claude-haiku-4-5-20251001"
 
-    claude = Anthropic(api_key=ANTHROPIC_API_KEY)
+    claude = get_claude()
 
     messages = [{"role": "user", "content": f"Suche 2-3 Rezepte für: {anfrage}"}]
     final_text = ""
