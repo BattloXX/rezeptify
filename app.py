@@ -372,7 +372,8 @@ def search_recipe_image(titel: str) -> Optional[str]:
 class Zutat(BaseModel):
     menge:   Optional[str] = ""
     einheit: Optional[str] = ""
-    name:    str
+    name:    Optional[str] = ""
+    gruppe:  Optional[str] = None
 
 class RezeptIn(BaseModel):
     titel:         str
@@ -654,8 +655,10 @@ _JSON_SCHEMA = """{
   "titel": "Rezeptname",
   "beschreibung": "Kurzbeschreibung (1-2 Sätze)",
   "zutaten": [
+    {"gruppe": "Für den Teig"},
     {"menge": "200", "einheit": "g", "name": "Mehl"},
     {"menge": "3", "einheit": "EL", "name": "Olivenöl"},
+    {"gruppe": "Für die Sauce"},
     {"menge": "", "einheit": "", "name": "Salz nach Geschmack"}
   ],
   "zubereitung": "Schritt-für-Schritt Zubereitung",
@@ -676,6 +679,7 @@ _RULES = """Regeln:
 - kategorie: Frühstück | Vorspeise | Hauptgericht | Dessert | Snack | Getränk | Backen | Salat | Suppe | Sonstiges
 - zeit_vorb / zeit_koch: Minuten als Ganzzahl (0 wenn unbekannt)
 - kalorien_pro_portion: Geschätzte Kalorien (kcal) pro Portion als Ganzzahl. Berechne anhand der Zutaten und Mengen. Falls nicht schätzbar: null
+- zutaten: Falls das Rezept Zutaten in Gruppen unterteilt (z.B. "Für den Teig", "Für die Sauce"), füge vor jeder Gruppe ein Marker-Objekt {"gruppe": "Gruppenname"} ein. Ohne Gruppen: nur normale {"menge","einheit","name"}-Objekte.
 - Falls kein Rezept erkennbar: {"fehler": "Kein Rezept gefunden"}
 - Antworte auf Deutsch"""
 
@@ -903,6 +907,7 @@ Ablauf:
     "titel": "Rezeptname",
     "beschreibung": "Kurzbeschreibung (1-2 Sätze)",
     "zutaten": [
+      {"gruppe": "Für den Teig"},
       {"menge": "200", "einheit": "g", "name": "Mehl"},
       {"menge": "3", "einheit": "EL", "name": "Olivenöl"}
     ],
@@ -926,6 +931,7 @@ Regeln:
 - Gib IMMER ein Array zurück, auch wenn nur 1 Ergebnis vorhanden
 - schwierigkeit: nur "leicht", "mittel" oder "schwer"
 - kategorie: Frühstück | Vorspeise | Hauptgericht | Dessert | Snack | Getränk | Backen | Salat | Suppe | Sonstiges
+- zutaten: Falls Gruppen vorhanden (z.B. "Für den Teig"), füge {"gruppe": "Gruppenname"} als Marker vor der Gruppe ein
 - Antworte auf Deutsch
 - Falls kein passendes Rezept: [{"fehler": "Kein passendes Rezept gefunden: [Grund]"}]"""
 

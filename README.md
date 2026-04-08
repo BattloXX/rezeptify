@@ -22,6 +22,8 @@
 | 🔍 **Suche & Filter** | Volltextsuche, Kategorie, Schwierigkeit, Tags, Sortierung |
 | 📸 **Bilder** | Mehrere Bilder pro Rezept, Kamera-Upload direkt am Smartphone |
 | 🗜️ **Auto-Komprimierung** | Bilder werden automatisch auf max. 1600px & JPEG skaliert |
+| 🌐 **Auto-Bild** | Bei Rezepten ohne Foto wird automatisch ein Bild von Chefkoch.de gesucht und gespeichert |
+| 🗂️ **Zutatengruppen** | Zutaten können in benannte Gruppen eingeteilt werden (z.B. „Für den Teig", „Für das Frosting") |
 
 ## Tech Stack
 
@@ -98,10 +100,35 @@ DELETE /api/bilder/{id}                Bild löschen
 PUT    /api/bilder/{id}/haupt          Als Hauptbild setzen
 POST   /api/analysiere-url             URL via Claude analysieren
 POST   /api/analysiere-bild            Screenshot/Foto/PDF via Claude analysieren
+POST   /api/rezept-suche               Rezepte im Internet suchen (Suchbot)
+POST   /api/rezepte/{id}/fetch-bild    Internet-Bild automatisch suchen & speichern
+POST   /api/rezepte/{id}/bilder/attach Bereits gespeichertes Bild einem Rezept zuweisen
 GET    /api/kategorien                 Kategorieliste
 GET    /api/tags                       Alle verwendeten Tags
 GET    /api/stats                      Statistiken
 ```
+
+## Zutatengruppen
+
+Rezepte können Zutaten in benannte Gruppen einteilen. Im JSON-Format werden Gruppen als Marker-Objekte vor den zugehörigen Zutaten gespeichert:
+
+```json
+"zutaten": [
+  {"gruppe": "Für den Teig"},
+  {"menge": "200", "einheit": "g", "name": "Mehl"},
+  {"menge": "100", "einheit": "ml", "name": "Milch"},
+  {"gruppe": "Für das Frosting"},
+  {"menge": "150", "einheit": "g", "name": "Puderzucker"},
+  {"menge": "50", "einheit": "g", "name": "Butter"}
+]
+```
+
+- **KI-Import** (URL, Bild, Suchbot) erkennt Gruppen automatisch
+- **Manuelles Formular**: „+ Gruppe"-Button fügt Gruppenheader ein
+- **Rezeptansicht**: Gruppen werden als orangene Abschnittsüberschriften angezeigt
+- **PDF & Rezeptbuch**: Gruppen werden als formatierte Überschriften gedruckt
+- **Einkaufsliste**: Gruppen erscheinen als `▸ Gruppenname` im kopierten Text
+- **Rückwärtskompatibel**: Bestehende Rezepte ohne Gruppen funktionieren unverändert
 
 ## Git Workflow
 

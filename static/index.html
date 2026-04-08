@@ -1018,6 +1018,17 @@ a { color: inherit; text-decoration: none; }
 .ing-row:hover .ing-copy { opacity: 1; }
 .ing-copy:hover { color: var(--accent); background: var(--a-50); }
 .ing-copy.done { opacity: 1; color: #065f46; }
+.ing-group-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  padding: 0.65rem 0 0.25rem;
+  border-bottom: none;
+  list-style: none;
+}
+.ing-group-header:first-child { padding-top: 0; }
 
 /* Steps */
 .steps { margin-bottom: 1.75rem; }
@@ -1098,6 +1109,7 @@ a { color: inherit; text-decoration: none; }
   .print-sect { font-size: 13pt; font-weight: 700; margin: 16pt 0 6pt; border-bottom: 1pt solid #ccc; padding-bottom: 3pt; page-break-after: avoid; }
   .print-ing { display: flex; gap: 12pt; padding: 3.5pt 0; border-bottom: 0.5pt solid #eee; page-break-inside: avoid; }
   .print-ing-amt { font-weight: 700; min-width: 85pt; color: #c8521a; flex-shrink: 0; }
+  .print-ing-group { font-size: 9pt; font-weight: 700; color: #c8521a; text-transform: uppercase; letter-spacing: 0.5pt; padding: 8pt 0 3pt; border-bottom: none; }
   .print-steps { white-space: pre-wrap; line-height: 1.8; font-size: 10.5pt; }
   .print-footer { margin-top: 20pt; font-size: 8pt; color: #aaa; border-top: 0.5pt solid #eee; padding-top: 6pt; page-break-before: avoid; }
 }
@@ -1260,6 +1272,38 @@ select.fc { cursor: pointer; }
   margin-top: 2px;
 }
 .z-add:hover { border-color: var(--accent); color: var(--accent); }
+.z-group-row {
+  display: grid;
+  grid-template-columns: 1fr 28px;
+  gap: 6px;
+  margin-bottom: 5px;
+  align-items: center;
+}
+.z-group-inp {
+  height: 36px;
+  padding: 0 10px;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--r-sm);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: inherit;
+  width: 100%;
+  color: var(--accent);
+  background: var(--a-50);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.z-group-inp:focus { outline: none; border-color: var(--accent); }
+.z-group-label {
+  grid-column: 1;
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--accent);
+  margin-bottom: -2px;
+  padding-left: 2px;
+}
 
 /* Tag input */
 .tag-input-wrap {
@@ -2506,7 +2550,10 @@ select.fc { cursor: pointer; }
         <span>Menge</span><span>Einheit</span><span>Zutat</span><span></span>
       </div>
       <div id="z-form"></div>
-      <button class="z-add" onclick="addZRow()">+ Zutat hinzufügen</button>
+      <div style="display:flex;gap:6px;margin-top:2px">
+        <button class="z-add" style="flex:1" onclick="addZRow()">+ Zutat hinzufügen</button>
+        <button class="z-add" style="flex:0 0 auto;padding:0 14px;border-color:var(--accent);color:var(--accent)" onclick="addZGroup()" title="Zutatengruppe hinzufügen">+ Gruppe</button>
+      </div>
     </div>
 
     <div class="form-section">
@@ -2909,6 +2956,9 @@ function buildDetailBody(r) {
 function renderIngredients(zutaten, current, base) {
   const factor = base > 0 ? current / base : 1;
   return zutaten.map(z => {
+    if (z.gruppe) {
+      return `<li class="ing-group-header">${x(z.gruppe)}</li>`;
+    }
     const rawMenge = z.menge || '';
     const scaled   = scaleAmount(rawMenge, factor);
     const copyText = [scaled, x(z.einheit||''), x(z.name)].filter(Boolean).join(' ');
@@ -2984,6 +3034,7 @@ function copyZutaten() {
     `🛒 ${S.current.titel} (${portionState.current} Portionen)`,
     '',
     ...S.current.zutaten.map(z => {
+      if (z.gruppe) return `\n▸ ${z.gruppe}`;
       const m = scaleAmount(z.menge||'', factor);
       const e = z.einheit || '';
       return `• ${[m, e, z.name].filter(Boolean).join(' ')}`;
@@ -3042,6 +3093,7 @@ function exportPDF() {
   const gz = (r.zeit_vorb||0)+(r.zeit_koch||0);
   const metaLine = [r.kategorie, gz ? gz + ' Min.' : null, portionState.current + ' Portionen', r.schwierigkeit].filter(Boolean).join(' · ');
   const ingsHtml = (r.zutaten||[]).map(z => {
+    if (z.gruppe) return '<div class="print-ing print-ing-group">' + x(z.gruppe) + '</div>';
     const m = scaleAmount(z.menge||'', factor);
     return '<div class="print-ing"><span class="print-ing-amt">' + m + ' ' + x(z.einheit||'') + '</span><span>' + x(z.name) + '</span></div>';
   }).join('');
@@ -3212,7 +3264,7 @@ async function delFormExistImg(id) {
 }
 function renderZRows(zs) {
   document.getElementById('z-form').innerHTML = '';
-  (zs.length ? zs : [{}]).forEach(z => addZRow(z));
+  (zs.length ? zs : [{}]).forEach(z => z.gruppe ? addZGroup(z) : addZRow(z));
 }
 function addZRow(z={}) {
   const d = document.createElement('div');
@@ -3223,12 +3275,23 @@ function addZRow(z={}) {
     <button class="z-rm" onclick="this.parentElement.remove()" title="Entfernen">×</button>`;
   document.getElementById('z-form').appendChild(d);
 }
+function addZGroup(z={}) {
+  const d = document.createElement('div');
+  d.className = 'z-group-row';
+  d.innerHTML = `<input class="z-group-inp" placeholder="Gruppenname (z.B. Für den Teig)" value="${x(z.gruppe||'')}" data-f="gruppe">
+    <button class="z-rm" onclick="this.parentElement.remove()" title="Gruppe entfernen">×</button>`;
+  document.getElementById('z-form').appendChild(d);
+}
 function getZRows() {
-  return Array.from(document.querySelectorAll('#z-form .z-row')).map(r => ({
-    menge:   r.querySelector('[data-f=menge]').value.trim(),
-    einheit: r.querySelector('[data-f=einheit]').value.trim(),
-    name:    r.querySelector('[data-f=name]').value.trim()
-  })).filter(z => z.name);
+  return Array.from(document.querySelectorAll('#z-form .z-row, #z-form .z-group-row')).map(r => {
+    const gInp = r.querySelector('[data-f=gruppe]');
+    if (gInp) return { gruppe: gInp.value.trim() };
+    return {
+      menge:   r.querySelector('[data-f=menge]').value.trim(),
+      einheit: r.querySelector('[data-f=einheit]').value.trim(),
+      name:    r.querySelector('[data-f=name]').value.trim()
+    };
+  }).filter(z => z.name || z.gruppe);
 }
 function setupTagInp() {
   const inp = document.getElementById('tag-inp');
@@ -3368,13 +3431,22 @@ function renderPreview(r) {
   const gz = (r.zeit_vorb||0) + (r.zeit_koch||0);
   const previewImg = r.downloaded_image
     ? `<img class="preview-img" src="/static/uploads/${x(r.downloaded_image)}" alt="${x(r.titel)}" onerror="this.remove()">` : '';
-  const zs = (r.zutaten||[]).slice(0,5).map(z =>
-    `<li style="padding:5px 0;font-size:0.86rem;border-bottom:1px solid var(--n-100)">
-      <strong style="color:var(--accent)">${x(z.menge||'')} ${x(z.einheit||'')}</strong> ${x(z.name)}
-    </li>`
-  ).join('');
-  const more = (r.zutaten||[]).length > 5
-    ? `<li style="color:var(--muted);font-size:0.8rem;padding:4px 0">… und ${r.zutaten.length-5} weitere</li>` : '';
+  const allZ = (r.zutaten||[]);
+  const realZ = allZ.filter(z => !z.gruppe);
+  let shown = 0;
+  const previewItems = [];
+  for (const z of allZ) {
+    if (shown >= 5) break;
+    if (z.gruppe) {
+      previewItems.push(`<li style="padding:5px 0 2px;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--accent);border-bottom:none">${x(z.gruppe)}</li>`);
+    } else {
+      previewItems.push(`<li style="padding:5px 0;font-size:0.86rem;border-bottom:1px solid var(--n-100)"><strong style="color:var(--accent)">${x(z.menge||'')} ${x(z.einheit||'')}</strong> ${x(z.name)}</li>`);
+      shown++;
+    }
+  }
+  const zs = previewItems.join('');
+  const more = realZ.length > 5
+    ? `<li style="color:var(--muted);font-size:0.8rem;padding:4px 0">… und ${realZ.length-5} weitere</li>` : '';
   document.getElementById('preview-body').innerHTML = `
     ${previewImg}
     <div class="preview-title">${x(r.titel)}</div>
@@ -3639,7 +3711,10 @@ async function exportRezeptbuch() {
     const metaParts = [r.kategorie, gz ? gz+' Min.' : null, r.portionen ? r.portionen+' Portionen' : null, r.schwierigkeit, r.kalorien_pro_portion ? r.kalorien_pro_portion+' kcal/P.' : null].filter(Boolean);
     const imgUrl = r.haupt_bild || r.bilder?.[0]?.url;
     const imgHtml = imgUrl ? `<img class="rb-recipe-img" src="${window.location.origin}${imgUrl}" alt="${x(r.titel)}">` : '';
-    const ingsHtml = (r.zutaten||[]).map(z => `<tr><td class="rb-ing-amt">${x(z.menge||'')} ${x(z.einheit||'')}</td><td>${x(z.name)}</td></tr>`).join('');
+    const ingsHtml = (r.zutaten||[]).map(z => z.gruppe
+      ? `<tr><td colspan="2" class="rb-ing-group">${x(z.gruppe)}</td></tr>`
+      : `<tr><td class="rb-ing-amt">${x(z.menge||'')} ${x(z.einheit||'')}</td><td>${x(z.name)}</td></tr>`
+    ).join('');
     const tagsHtml = (r.tags||[]).length ? `<div class="rb-tags">${(r.tags||[]).map(t=>`<span class="rb-tag">${x(t)}</span>`).join('')}</div>` : '';
     const srcHtml = r.quelle_url ? `<div class="rb-src">Quelle: ${x(r.quelle_url)}</div>` : '';
     return `<div class="rb-recipe rb-page-break">
@@ -3692,6 +3767,7 @@ async function exportRezeptbuch() {
     .rb-ing-table tr { border-bottom: 0.5pt solid #eee; page-break-inside: avoid; }
     .rb-ing-table td { padding: 4pt 0; }
     .rb-ing-amt { font-weight: 700; color: #e8823a; width: 100pt; }
+    .rb-ing-group { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #e8823a; padding: 8pt 0 3pt !important; border-bottom: none !important; }
     .rb-steps { font-size: 10.5pt; line-height: 1.8; white-space: pre-wrap; color: #333; margin-bottom: 0.4cm; }
     .rb-tags { display: flex; flex-wrap: wrap; gap: 4pt; margin-top: 0.3cm; }
     .rb-tag { background: #f0f0f0; border-radius: 20pt; padding: 2pt 8pt; font-size: 8pt; color: #666; }
