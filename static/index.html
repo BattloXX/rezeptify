@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<!-- Cache-bust: 1775758086 -->
+<!-- Cache-bust: 1775761720 -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#1c1b1b">
@@ -2124,7 +2124,13 @@ select.fc { cursor: pointer; }
 }
 .bot-history-item:hover { border-color: var(--accent); color: var(--text); }
 .bot-history-item .material-symbols-outlined { font-size: 15px; color: var(--muted); }
+
+.zh { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; cursor: grab; color: var(--muted); font-size: 16px; flex-shrink: 0; }
+.zh:active { cursor: grabbing; }
+.zg { opacity: 0.4; background: var(--border); }
+
 </style>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -3280,32 +3286,28 @@ async function delFormExistImg(id) {
   if (S.current) S.current.bilder = S.current.bilder.filter(b => b.id !== id);
   renderFormImgs();
 }
+function initZSortable() {
+  const z = document.getElementById('z-form');
+  if (!z || !window.Sortable) return;
+  if (z.__s) z.__s.destroy();
+  z.__s = new Sortable(z, { handle: '.zh', animation: 150, ghostClass: 'zg' });
+}
+
 function renderZRows(zs) {
   document.getElementById('z-form').innerHTML = '';
   (zs.length ? zs : [{}]).forEach(z => z.gruppe ? addZGroup(z) : addZRow(z));
+  setTimeout(initZSortable, 0);
 }
 function addZRow(z={}) {
   const d = document.createElement('div');
   d.className = 'z-row';
-  d.innerHTML = `<input class="z-inp" placeholder="200" value="${x(z.menge||'')}" data-f="menge">
-    <input class="z-inp" placeholder="g" value="${x(z.einheit||'')}" data-f="einheit">
-    <input class="z-inp" placeholder="Mehl" value="${x(z.name||'')}" data-f="name">
-    <div style="display:flex;gap:2px">
-      <button class="z-arrow-btn" onclick="moveZItem(this,-1)" title="Nach oben">▲</button>
-      <button class="z-arrow-btn" onclick="moveZItem(this,1)" title="Nach unten">▼</button>
-      <button class="z-rm" onclick="this.parentElement.parentElement.remove()" title="Entfernen">×</button>
-    </div>`;
+  d.innerHTML = `<div class="zh" title="Ziehen">⋮⋮</div><input class="z-inp" placeholder="200" value="${x(z.menge||'')}" data-f="menge"><input class="z-inp" placeholder="g" value="${x(z.einheit||'')}" data-f="einheit"><input class="z-inp" placeholder="Mehl" value="${x(z.name||'')}" data-f="name"><button class="z-rm" onclick="this.closest('.z-row').remove()" title="Entfernen">×</button>`;
   document.getElementById('z-form').appendChild(d);
 }
 function addZGroup(z={}) {
   const d = document.createElement('div');
   d.className = 'z-group-row';
-  d.innerHTML = `<input class="z-group-inp" placeholder="Gruppenname (z.B. Für den Teig)" value="${x(z.gruppe||'')}" data-f="gruppe">
-    <div style="display:flex;gap:2px">
-      <button class="z-arrow-btn" onclick="moveZItem(this,-1)" title="Nach oben">▲</button>
-      <button class="z-arrow-btn" onclick="moveZItem(this,1)" title="Nach unten">▼</button>
-      <button class="z-rm" onclick="this.parentElement.parentElement.remove()" title="Entfernen">×</button>
-    </div>`;
+  d.innerHTML = `<div class="zh" title="Ziehen">⋮⋮</div><input class="z-inp" placeholder="Gruppe" value="${x(z.gruppe||'')}" data-f="gruppe"><button class="z-rm" onclick="this.closest('.z-group-row').remove()" title="Entfernen">×</button>`;
   document.getElementById('z-form').appendChild(d);
 }
 function moveZItem(btn, direction) {
