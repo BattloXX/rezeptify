@@ -22,4 +22,5 @@ class RezeptIn(BaseModel):
     tags:                    Optional[List[str]] = []
     quelle_url:              Optional[str] = ""
     quelle_typ:              Optional[str] = "manuell"
+    quelldatei:              Optional[str] = None
     kalorien_pro_portion:    Optional[int] = None

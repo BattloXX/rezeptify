@@ -1,4 +1,4 @@
-import re, json, base64
+import re, json, base64, uuid
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from config import CLAUDE_MODEL, MAX_UPLOAD_MB, UPLOAD_DIR
@@ -82,6 +82,10 @@ async def analysiere_bild(file: UploadFile = File(...)):
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"Datei zu groß (max {MAX_UPLOAD_MB} MB)")
 
+    # Originaldatei dauerhaft speichern
+    orig_fname = f"src_{uuid.uuid4().hex}{ext}"
+    (UPLOAD_DIR / orig_fname).write_bytes(data)
+
     claude = get_claude()
 
     if ext == ".pdf":
@@ -117,6 +121,7 @@ async def analysiere_bild(file: UploadFile = File(...)):
         raise HTTPException(422, result["fehler"])
 
     result["quelle_typ"] = "pdf-import" if ext == ".pdf" else "bild-import"
+    result["quelldatei"] = orig_fname
 
     if ext != ".pdf":
         import_fname = resize_and_save(data, ext)

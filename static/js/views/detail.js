@@ -52,6 +52,11 @@ function buildDetailBody(r) {
     ? `<a class="source-link" href="${x(r.quelle_url)}" target="_blank" rel="noopener">
         <span class="material-symbols-outlined">open_in_new</span>
         Originalquelle (${x(r.quelle_typ||'Web')})</a>` : '';
+  const quelldatei = r.quelldatei
+    ? `<a class="source-link" href="/static/uploads/${x(r.quelldatei)}" target="_blank"
+          style="margin-left:${r.quelle_url ? '8px' : '0'}">
+        <span class="material-symbols-outlined">${r.quelldatei.endsWith('.pdf') ? 'picture_as_pdf' : 'image'}</span>
+        Quelldatei ${r.quelldatei.endsWith('.pdf') ? '(PDF)' : '(Bild)'}</a>` : '';
   const portionenBar = (r.portionen||0) > 0 ? `
     <div class="portion-bar">
       <span class="portion-label">Portionen</span>
@@ -74,7 +79,7 @@ function buildDetailBody(r) {
       ${r.schwierigkeit ? `<span class="diff-tag ${x(r.schwierigkeit)}" style="margin:0">${x(r.schwierigkeit)}</span>` : ''}
     </div>
     ${r.beschreibung ? `<p class="d-desc">${x(r.beschreibung)}</p>` : ''}
-    ${src ? `<div style="margin-bottom:1.25rem">${src}</div>` : ''}
+    ${(src || quelldatei) ? `<div style="margin-bottom:1.25rem;display:flex;flex-wrap:wrap;gap:8px">${src}${quelldatei}</div>` : ''}
     <div class="star-row">
       <span class="star-row-label">Bewertung</span>
       <div class="stars" id="detail-stars">${renderDetailStars(r.bewertung, r.id)}</div>

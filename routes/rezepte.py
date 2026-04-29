@@ -97,14 +97,14 @@ def create_rezept(data: RezeptIn):
             cur.execute("""
                 INSERT INTO rezepte (titel,beschreibung,zutaten,zubereitung,portionen,
                     zeit_vorb,zeit_koch,schwierigkeit,kategorie,tags,quelle_url,quelle_typ,
-                    kalorien_pro_portion)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    quelldatei,kalorien_pro_portion)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (data.titel, data.beschreibung,
                   json.dumps([z.dict() for z in data.zutaten], ensure_ascii=False),
                   data.zubereitung, data.portionen, data.zeit_vorb, data.zeit_koch,
                   data.schwierigkeit, data.kategorie,
                   json.dumps(data.tags, ensure_ascii=False),
-                  data.quelle_url, data.quelle_typ, data.kalorien_pro_portion))
+                  data.quelle_url, data.quelle_typ, data.quelldatei, data.kalorien_pro_portion))
             new_id = cur.lastrowid
             slug = make_slug(data.titel, new_id)
             cur.execute("UPDATE rezepte SET slug=%s WHERE id=%s", (slug, new_id))
@@ -120,14 +120,14 @@ def update_rezept(rid: int, data: RezeptIn):
                 UPDATE rezepte SET titel=%s,beschreibung=%s,zutaten=%s,zubereitung=%s,
                     portionen=%s,zeit_vorb=%s,zeit_koch=%s,schwierigkeit=%s,
                     kategorie=%s,tags=%s,quelle_url=%s,quelle_typ=%s,
-                    kalorien_pro_portion=%s
+                    quelldatei=%s,kalorien_pro_portion=%s
                 WHERE id=%s
             """, (data.titel, data.beschreibung,
                   json.dumps([z.dict() for z in data.zutaten], ensure_ascii=False),
                   data.zubereitung, data.portionen, data.zeit_vorb, data.zeit_koch,
                   data.schwierigkeit, data.kategorie,
                   json.dumps(data.tags, ensure_ascii=False),
-                  data.quelle_url, data.quelle_typ, data.kalorien_pro_portion, rid))
+                  data.quelle_url, data.quelle_typ, data.quelldatei, data.kalorien_pro_portion, rid))
             slug = make_slug(data.titel, rid)
             cur.execute("UPDATE rezepte SET slug=%s WHERE id=%s", (slug, rid))
             cur.execute("SELECT * FROM rezepte WHERE id=%s", (rid,))
@@ -147,5 +147,11 @@ def delete_rezept(rid: int):
                 p = UPLOAD_DIR / b["dateiname"]
                 if p.exists():
                     p.unlink()
+            cur.execute("SELECT quelldatei FROM rezepte WHERE id=%s", (rid,))
+            row = cur.fetchone()
+            if row and row.get("quelldatei"):
+                qf = UPLOAD_DIR / row["quelldatei"]
+                if qf.exists():
+                    qf.unlink()
             cur.execute("DELETE FROM rezepte WHERE id=%s", (rid,))
     return {"ok": True}

@@ -134,6 +134,7 @@ def init_db():
             ("slug",                "ADD COLUMN slug VARCHAR(300) UNIQUE AFTER titel"),
             ("kalorien_pro_portion","ADD COLUMN kalorien_pro_portion INT DEFAULT NULL AFTER bewertung"),
             ("bewertung",           "ADD COLUMN bewertung TINYINT DEFAULT NULL AFTER quelle_typ"),
+            ("quelldatei",          "ADD COLUMN quelldatei VARCHAR(255) DEFAULT NULL AFTER quelle_typ"),
         ]:
             with conn.cursor() as cur:
                 cur.execute("""
