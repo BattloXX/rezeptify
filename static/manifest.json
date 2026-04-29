@@ -4,8 +4,8 @@
   "description": "Persönliche Rezeptdatenbank mit KI-Import",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f1a0a",
-  "theme_color": "#0f1a0a",
+  "background_color": "#1c1b1b",
+  "theme_color": "#1c1b1b",
   "orientation": "any",
   "icons": [
     {
