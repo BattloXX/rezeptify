@@ -7,6 +7,7 @@ import { initImport } from './views/import.js';
 import { initBuch } from './views/buch.js';
 import { initBot } from './views/bot.js';
 import { initKochmodus } from './views/kochmodus.js';
+import { initEinkauf, loadEinkauf } from './views/einkauf.js';
 
 // ── Global state (accessed by all views) ─────────────────────────────────────
 export const S = {
@@ -26,6 +27,7 @@ export function showView(name) {
   document.getElementById('nav-' + name)?.classList.add('on');
   document.body.classList.toggle('kochmodus-active', name === 'kochmodus');
   if (name === 'buch') initBuch();
+  if (name === 'einkauf') loadEinkauf();
 }
 window.showView = showView;
 
@@ -165,6 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initImport();
   initBot();
   initKochmodus();
+  initEinkauf();
 
   if (!hasAuth()) {
     // Try a test request — if 401 or no auth configured, show login

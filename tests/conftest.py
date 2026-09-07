@@ -44,5 +44,6 @@ def client():
     with TestClient(app) as test_client:
         with get_db() as conn:
             with conn.cursor() as cur:
+                cur.execute("DELETE FROM einkaufsliste_eintraege")
                 cur.execute("DELETE FROM rezepte")
         yield test_client

@@ -293,6 +293,14 @@
       </div>
     </section>
 
+    <!-- ── EINKAUF view ──────────────────────────────────────────────── -->
+    <section id="view-einkauf" class="view">
+      <div class="shopping-header"><h2>Einkaufsliste</h2><button class="icon-pill" onclick="shareShopping()"><span class="material-symbols-outlined">share</span> Teilen</button></div>
+      <form id="einkauf-add" class="shopping-add"><input id="einkauf-name" class="fc" placeholder="Eintrag hinzufügen…" autocomplete="off"><button class="btn btn-accent" type="submit"><span class="material-symbols-outlined">add</span> Hinzufügen</button></form>
+      <div class="shopping-section"><h3>Offen</h3><div id="einkauf-open"></div></div>
+      <div class="shopping-section"><div class="shopping-done-head"><h3>Erledigt</h3><button id="einkauf-clean" class="btn btn-ghost" onclick="clearDone()" hidden>Erledigte löschen</button></div><div id="einkauf-done"></div></div>
+    </section>
+
   </div><!-- /.content -->
 
   <!-- ── KOCHMODUS view ─────────────────────────────────────────────── -->
@@ -320,6 +328,10 @@
     <button class="bnav-item" id="nav-import" onclick="showView('import')">
       <span class="material-symbols-outlined">add_circle</span>
       <span>Import</span>
+    </button>
+    <button class="bnav-item" id="nav-einkauf" onclick="showView('einkauf')">
+      <span class="material-symbols-outlined">shopping_cart</span>
+      <span>Einkauf</span>
     </button>
     <button class="bnav-item" id="nav-bot" onclick="showView('bot')">
       <span class="material-symbols-outlined">smart_toy</span>

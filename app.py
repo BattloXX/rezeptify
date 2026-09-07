@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from config import BASE_DIR, UPLOAD_DIR, APP_TITLE, DEBUG
 from db import init_db
-from routes import rezepte, bilder, ai, meta, kochen
+from routes import rezepte, bilder, ai, meta, kochen, einkauf
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -43,6 +43,7 @@ app.include_router(bilder.router)
 app.include_router(ai.router)
 app.include_router(meta.router)
 app.include_router(kochen.router)
+app.include_router(einkauf.router)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 

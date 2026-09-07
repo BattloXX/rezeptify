@@ -1,5 +1,5 @@
 import { api, apiFetch } from '../api.js';
-import { toast, x, EM, scaleAmount, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
+import { toast, x, EM, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
 import { S } from '../app.js';
 import { loadGrid } from './home.js';
 import { openEditForm } from './form.js';
@@ -95,6 +95,9 @@ function buildDetailBody(r) {
       </button>
       <button class="act-btn" onclick="copyZutaten()" id="btn-copy">
         <span class="material-symbols-outlined">shopping_cart</span>Einkaufsliste
+      </button>
+      <button class="act-btn" onclick="addToShoppingList()" id="btn-add-shopping">
+        <span class="material-symbols-outlined">add_shopping_cart</span>Zur Einkaufsliste hinzufügen
       </button>
       <button class="act-btn" onclick="exportPDF()">
         <span class="material-symbols-outlined">picture_as_pdf</span>PDF
@@ -234,12 +237,8 @@ async function shareRezept() {
   const url  = window.location.origin + '/rezept/' + slug;
   const gz   = (r.zeit_vorb||0) + (r.zeit_koch||0);
   const text = r.beschreibung || [r.kategorie, gz ? gz+' Min.' : null, r.schwierigkeit].filter(Boolean).join(' · ');
-  if (navigator.share) {
-    try { await navigator.share({ title: r.titel, text, url }); return; }
-    catch(e) { if (e.name === 'AbortError') return; }
-  }
-  try {
-    await navigator.clipboard.writeText(url);
+  const shared = await shareText(r.titel, `${text ? text + '\n' : ''}${url}`);
+  if (shared === 'copied') {
     const btn = document.getElementById('btn-share');
     btn.classList.add('share-ok');
     btn.innerHTML = '<span class="material-symbols-outlined">check</span> Link kopiert!';
@@ -247,9 +246,23 @@ async function shareRezept() {
       btn.classList.remove('share-ok');
       btn.innerHTML = '<span class="material-symbols-outlined">share</span>Teilen';
     }, 2500);
-  } catch { toast('Link: ' + url, ''); }
+  }
 }
 window.shareRezept = shareRezept;
+
+async function addToShoppingList() {
+  if (!S.current) return;
+  const btn = document.getElementById('btn-add-shopping');
+  try {
+    await api('/api/rezepte/' + S.current.id + '/zu-einkaufsliste', {
+      method: 'POST', body: JSON.stringify({ portionen: portionState.current })
+    });
+    const old = btn.innerHTML;
+    btn.innerHTML = '<span class="material-symbols-outlined">check</span> Hinzugefügt!';
+    setTimeout(() => { if (btn) btn.innerHTML = old; }, 2500);
+  } catch (e) { toast(e.message, 'err'); }
+}
+window.addToShoppingList = addToShoppingList;
 
 function exportPDF() {
   if (!S.current) return;

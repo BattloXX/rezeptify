@@ -138,6 +138,21 @@ def init_db():
                     FOREIGN KEY (rezept_id) REFERENCES rezepte(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS einkaufsliste_eintraege (
+                    id           INT AUTO_INCREMENT PRIMARY KEY,
+                    name         VARCHAR(255) NOT NULL,
+                    menge        DECIMAL(10,3) NULL,
+                    einheit      VARCHAR(32) NULL,
+                    menge_text   VARCHAR(64) NULL,
+                    erledigt     TINYINT(1) NOT NULL DEFAULT 0,
+                    manuell      TINYINT(1) NOT NULL DEFAULT 0,
+                    herkunft     JSON NULL,
+                    sortierung   SMALLINT NULL,
+                    erstellt_am  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    geaendert_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
             for k in ["Frühstück","Vorspeise","Hauptgericht","Dessert","Snack",
                       "Getränk","Backen","Salat","Suppe","Sonstiges"]:
                 cur.execute("INSERT IGNORE INTO kategorien (name) VALUES (%s)", (k,))

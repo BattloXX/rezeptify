@@ -41,6 +41,17 @@ export function scaleAmount(menge, factor) {
   return x(menge);
 }
 
+// ── Sharing ──────────────────────────────────────────────────────────────────
+// Returns 'shared' (native share sheet), 'copied' (clipboard fallback) or false.
+export async function shareText(title, body) {
+  if (navigator.share) {
+    try { await navigator.share({ title, text: body }); return 'shared'; }
+    catch(e) { if (e.name === 'AbortError') return false; }
+  }
+  try { await navigator.clipboard.writeText(body); return 'copied'; }
+  catch { toast('Inhalt: ' + body, ''); return false; }
+}
+
 // ── Category emoji map ────────────────────────────────────────────────────────
 export const EM = {
   'Frühstück':'🌅','Vorspeise':'🥗','Hauptgericht':'🍽️','Dessert':'🍰',
