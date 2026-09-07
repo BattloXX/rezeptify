@@ -153,6 +153,19 @@ def init_db():
                     geaendert_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS wochenplan (
+                    id          INT AUTO_INCREMENT PRIMARY KEY,
+                    rezept_id   INT NOT NULL,
+                    datum       DATE NOT NULL,
+                    mahlzeit    ENUM('fruehstueck','mittag','abend','snack') DEFAULT 'abend',
+                    portionen   SMALLINT NULL,
+                    notiz       VARCHAR(255) NULL,
+                    erstellt_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_wochenplan_datum (datum),
+                    FOREIGN KEY (rezept_id) REFERENCES rezepte(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
             for k in ["Frühstück","Vorspeise","Hauptgericht","Dessert","Snack",
                       "Getränk","Backen","Salat","Suppe","Sonstiges"]:
                 cur.execute("INSERT IGNORE INTO kategorien (name) VALUES (%s)", (k,))

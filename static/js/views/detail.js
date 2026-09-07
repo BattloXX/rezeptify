@@ -99,6 +99,9 @@ function buildDetailBody(r) {
       <button class="act-btn" onclick="addToShoppingList()" id="btn-add-shopping">
         <span class="material-symbols-outlined">add_shopping_cart</span>Zur Einkaufsliste hinzufügen
       </button>
+      <button class="act-btn" onclick="openPlanOverlay()">
+        <span class="material-symbols-outlined">calendar_add_on</span>Für diese Woche planen
+      </button>
       <button class="act-btn" onclick="exportPDF()">
         <span class="material-symbols-outlined">picture_as_pdf</span>PDF
       </button>
@@ -263,6 +266,32 @@ async function addToShoppingList() {
   } catch (e) { toast(e.message, 'err'); }
 }
 window.addToShoppingList = addToShoppingList;
+
+function openPlanOverlay() {
+  if (!S.current) return;
+  const select = document.getElementById('plan-date');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  select.innerHTML = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today); d.setDate(today.getDate() + i);
+    const value = d.toISOString().slice(0, 10);
+    return `<option value="${value}">${d.toLocaleDateString('de-AT', { weekday: 'long', day: '2-digit', month: '2-digit' })}</option>`;
+  }).join('');
+  document.getElementById('plan-recipe-title').textContent = S.current.titel;
+  document.getElementById('ov-planen').classList.add('on');
+}
+
+async function confirmPlan() {
+  if (!S.current) return;
+  try {
+    await api('/api/wochenplan', { method: 'POST', body: JSON.stringify({
+      rezept_id: S.current.id, datum: document.getElementById('plan-date').value,
+      mahlzeit: document.getElementById('plan-meal').value, portionen: portionState.current,
+    }) });
+    closeOverlay('ov-planen'); toast('Für den Wochenplan vorgemerkt', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+window.openPlanOverlay = openPlanOverlay;
+window.confirmPlan = confirmPlan;
 
 function exportPDF() {
   if (!S.current) return;

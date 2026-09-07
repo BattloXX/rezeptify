@@ -301,6 +301,11 @@
       <div class="shopping-section"><div class="shopping-done-head"><h3>Erledigt</h3><button id="einkauf-clean" class="btn btn-ghost" onclick="clearDone()" hidden>Erledigte löschen</button></div><div id="einkauf-done"></div></div>
     </section>
 
+    <section id="view-wochenplan" class="view">
+      <div class="plan-header"><div><h2>Wochenplan</h2><p id="wochenplan-range"></p></div><button class="btn btn-accent" onclick="createWeekShopping()"><span class="material-symbols-outlined">add_shopping_cart</span>Einkaufsliste für diese Woche erstellen</button></div>
+      <div id="wochenplan-days" class="plan-days"></div>
+    </section>
+
   </div><!-- /.content -->
 
   <!-- ── KOCHMODUS view ─────────────────────────────────────────────── -->
@@ -333,6 +338,10 @@
       <span class="material-symbols-outlined">shopping_cart</span>
       <span>Einkauf</span>
     </button>
+    <button class="bnav-item" id="nav-wochenplan" onclick="showView('wochenplan')">
+      <span class="material-symbols-outlined">calendar_month</span>
+      <span>Plan</span>
+    </button>
     <button class="bnav-item" id="nav-bot" onclick="showView('bot')">
       <span class="material-symbols-outlined">smart_toy</span>
       <span>KI-Suche</span>
@@ -344,6 +353,13 @@
   </nav>
 
 </div><!-- /#app -->
+
+<div id="ov-planen" class="overlay" onclick="overlayClick(event,'ov-planen')">
+  <div class="modal plan-modal"><div class="form-header"><span class="form-header-title">Für diese Woche planen</span><button class="form-header-close" onclick="closeOverlay('ov-planen')">×</button></div><div class="plan-modal-body"><strong id="plan-recipe-title"></strong><label>Tag<select id="plan-date" class="fc"></select></label><label>Mahlzeit<select id="plan-meal" class="fc"><option value="fruehstueck">Frühstück</option><option value="mittag">Mittagessen</option><option value="abend" selected>Abendessen</option><option value="snack">Snack</option></select></label></div><div class="form-footer"><button class="btn btn-ghost" onclick="closeOverlay('ov-planen')">Abbrechen</button><button class="btn btn-accent" onclick="confirmPlan()">Planen</button></div></div>
+</div>
+<div id="ov-plan-picker" class="overlay" onclick="overlayClick(event,'ov-plan-picker')">
+  <div class="modal plan-modal"><div class="form-header"><span class="form-header-title">Rezept hinzufügen</span><button class="form-header-close" onclick="closeOverlay('ov-plan-picker')">×</button></div><div class="plan-modal-body"><strong id="plan-picker-day"></strong><label>Mahlzeit<select id="plan-picker-meal" class="fc"><option value="fruehstueck">Frühstück</option><option value="mittag">Mittagessen</option><option value="abend" selected>Abendessen</option><option value="snack">Snack</option></select></label><input id="plan-picker-search" type="search" class="fc" placeholder="Rezepte suchen…"><div id="plan-picker-list" class="plan-picker-list"></div></div></div>
+</div>
 
 <!-- ── Detail overlay ────────────────────────────────────────────────── -->
 <div id="ov-detail" class="overlay" onclick="overlayClick(event,'ov-detail')">

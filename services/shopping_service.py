@@ -95,6 +95,32 @@ def _decimal_amount(value):
         return None
 
 
+def zutaten_fuer_einkauf(rezept, portionen):
+    """Return scaled, merge-ready shopping entries for one recipe row."""
+    base_portionen = rezept.get("portionen") or 0
+    faktor = portionen / base_portionen if base_portionen else 1
+    zutaten = rezept.get("zutaten") or []
+    if isinstance(zutaten, str):
+        try:
+            zutaten = json.loads(zutaten)
+        except json.JSONDecodeError:
+            zutaten = []
+    items = []
+    for zutat in zutaten:
+        if zutat.get("gruppe") or not zutat.get("name"):
+            continue
+        raw = zutat.get("menge") or ""
+        scaled = scale_amount(raw, zutat.get("einheit"), faktor)
+        amount = _decimal_amount(scaled)
+        items.append({
+            "name": zutat["name"], "menge": amount, "einheit": zutat.get("einheit"),
+            "menge_text": None if amount is not None else (scaled or None),
+            "herkunft": [{"rezept_id": rezept["id"], "rezept_titel": rezept["titel"],
+                           "menge": scaled, "einheit": zutat.get("einheit") or ""}],
+        })
+    return items
+
+
 def merge_or_add(cur, eintraege):
     """Persist entries, merging only exact names and recognised unit families."""
     result = []

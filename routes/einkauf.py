@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from auth import require_auth
 from db import get_db, parse_json_field
-from services.shopping_service import merge_or_add, scale_amount, _decimal_amount
+from services.shopping_service import merge_or_add, zutaten_fuer_einkauf
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -71,17 +71,7 @@ def rezept_hinzufuegen(rid: int, body: dict):
             cur.execute("SELECT id, titel, portionen, zutaten FROM rezepte WHERE id=%s", (rid,))
             recipe = cur.fetchone()
             if not recipe: raise HTTPException(404, "Rezept nicht gefunden")
-            factor = portionen / recipe["portionen"] if recipe["portionen"] else 1
-            items = []
-            for ingredient in parse_json_field(recipe["zutaten"]):
-                if ingredient.get("gruppe") or not ingredient.get("name"): continue
-                raw = ingredient.get("menge") or ""
-                scaled = scale_amount(raw, ingredient.get("einheit"), factor)
-                amount = _decimal_amount(scaled)
-                items.append({"name": ingredient["name"], "menge": amount, "einheit": ingredient.get("einheit"),
-                              "menge_text": None if amount is not None else (scaled or None),
-                              "herkunft": [{"rezept_id": rid, "rezept_titel": recipe["titel"], "menge": scaled, "einheit": ingredient.get("einheit") or ""}]})
-            return {"eintraege": [_serialize(row) for row in merge_or_add(cur, items)]}
+            return {"eintraege": [_serialize(row) for row in merge_or_add(cur, zutaten_fuer_einkauf(recipe, portionen))]}
 
 
 @router.post("/api/einkaufsliste/aufraeumen")
