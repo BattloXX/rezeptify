@@ -6,6 +6,9 @@ import pymysql.cursors
 
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_CHARSET
 
+# Informative Version für den Health-Endpoint; init_db() bleibt bewusst idempotent.
+SCHEMA_VERSION = 1
+
 
 @contextmanager
 def get_db():
@@ -177,6 +180,20 @@ def init_db():
                     erstellt_am              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_kochhistorie_rezept_gekocht (rezept_id, gekocht_am),
                     FOREIGN KEY (rezept_id) REFERENCES rezepte(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS system_updates (
+                    id            INT AUTO_INCREMENT PRIMARY KEY,
+                    gestartet_am  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status        ENUM('laufend','neustart_ausgeloest','abgeschlossen','fehlgeschlagen') NOT NULL DEFAULT 'laufend',
+                    von_version   VARCHAR(20) NULL,
+                    ziel_version  VARCHAR(20) NULL,
+                    backup_pfad   VARCHAR(255) NULL,
+                    log           TEXT NULL,
+                    fehler        TEXT NULL,
+                    beendet_am    TIMESTAMP NULL,
+                    INDEX idx_system_updates_status (status)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
             for k in ["Frühstück","Vorspeise","Hauptgericht","Dessert","Snack",

@@ -56,6 +56,9 @@
     <button id="pwa-install-btn" class="topbar-btn" style="display:none">
       <span class="material-symbols-outlined">install_mobile</span>
     </button>
+    <button class="topbar-btn topbar-system" onclick="showView('system')" title="System">
+      <span class="material-symbols-outlined">settings</span>
+    </button>
   </header>
 
   <!-- PWA banner -->
@@ -260,6 +263,18 @@
       <div id="bot-history" class="bot-history"></div>
     </section>
 
+    <!-- ── SYSTEM view ────────────────────────────────────────────────── -->
+    <section id="view-system" class="view">
+      <div class="system-header"><h2>System</h2><p>Version und sichere Aktualisierung dieser Installation.</p></div>
+      <div class="system-card">
+        <div><span class="system-label">Installierte Version</span><strong id="system-version">–</strong></div>
+        <span id="system-db" class="system-db"></span>
+      </div>
+      <button id="system-check-btn" class="btn btn-accent" onclick="checkForUpdate()">Nach Update suchen</button>
+      <div id="system-result" class="system-result" aria-live="polite"></div>
+      <ol id="system-progress" class="system-progress" aria-live="polite"></ol>
+    </section>
+
     <!-- ── BUCH view ──────────────────────────────────────────────────── -->
     <section id="view-buch" class="view">
       <div class="rb-header">
@@ -385,6 +400,15 @@
   </nav>
 
 </div><!-- /#app -->
+
+<!-- ── System update confirmation ────────────────────────────────────── -->
+<div id="ov-system-update" class="overlay" onclick="overlayClick(event,'ov-system-update')">
+  <div class="modal system-modal">
+    <div class="form-header"><span class="form-header-title">Update bestätigen</span><button class="form-header-close" onclick="closeOverlay('ov-system-update')">×</button></div>
+    <div class="system-modal-body"><p>Vor dem Update wird ein lokales Backup erstellt. Bitte bestätige mit dem App-Passwort.</p><input id="system-update-pwd" type="password" class="fc" autocomplete="current-password" placeholder="Passwort"></div>
+    <div class="form-footer"><button class="btn btn-ghost" onclick="closeOverlay('ov-system-update')">Abbrechen</button><button class="btn btn-accent" onclick="confirmSystemUpdate()">Update starten</button></div>
+  </div>
+</div>
 
 <div id="ov-planen" class="overlay" onclick="overlayClick(event,'ov-planen')">
   <div class="modal plan-modal"><div class="form-header"><span class="form-header-title">Für diese Woche planen</span><button class="form-header-close" onclick="closeOverlay('ov-planen')">×</button></div><div class="plan-modal-body"><strong id="plan-recipe-title"></strong><label>Tag<select id="plan-date" class="fc"></select></label><label>Mahlzeit<select id="plan-meal" class="fc"><option value="fruehstueck">Frühstück</option><option value="mittag">Mittagessen</option><option value="abend" selected>Abendessen</option><option value="snack">Snack</option></select></label></div><div class="form-footer"><button class="btn btn-ghost" onclick="closeOverlay('ov-planen')">Abbrechen</button><button class="btn btn-accent" onclick="confirmPlan()">Planen</button></div></div>

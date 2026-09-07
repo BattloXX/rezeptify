@@ -30,6 +30,9 @@ def _install_test_config():
     module.ALLOWED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
     module.APP_TITLE = "Rezeptify Test"
     module.DEBUG = True
+    module.UPDATE_GIT_REMOTE = "origin"
+    module.UPDATE_GIT_BRANCH = "main"
+    module.BACKUP_DIR = root / "backups"
     sys.modules["config"] = module
 
 
@@ -47,5 +50,6 @@ def client():
                 cur.execute("DELETE FROM einkaufsliste_eintraege")
                 cur.execute("DELETE FROM wochenplan")
                 cur.execute("DELETE FROM kochhistorie")
+                cur.execute("DELETE FROM system_updates")
                 cur.execute("DELETE FROM rezepte")
         yield test_client

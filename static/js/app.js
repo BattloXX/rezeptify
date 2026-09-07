@@ -9,6 +9,7 @@ import { initBot } from './views/bot.js';
 import { initKochmodus } from './views/kochmodus.js';
 import { initEinkauf, loadEinkauf } from './views/einkauf.js';
 import { initWochenplan, loadWochenplan } from './views/wochenplan.js';
+import { initSystem, loadSystem } from './views/system.js';
 
 // ── Global state (accessed by all views) ─────────────────────────────────────
 export const S = {
@@ -30,6 +31,7 @@ export function showView(name) {
   if (name === 'buch') initBuch();
   if (name === 'einkauf') loadEinkauf();
   if (name === 'wochenplan') loadWochenplan();
+  if (name === 'system') loadSystem();
 }
 window.showView = showView;
 
@@ -171,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initKochmodus();
   initEinkauf();
   initWochenplan();
+  initSystem();
 
   if (!hasAuth()) {
     // Try a test request — if 401 or no auth configured, show login

@@ -168,6 +168,14 @@ a { color: inherit; text-decoration: none; }
 }
 .topbar-btn:hover { background: var(--a-500); }
 .topbar-btn .material-symbols-outlined { font-size: 16px; }
+.topbar-system { padding:0 10px; margin-left:6px; }
+
+/* System administration is intentionally reachable from the unobtrusive top bar. */
+.system-header { margin-bottom:1.25rem; }.system-header h2 { font-family:var(--serif); margin:0; }.system-header p { color:var(--muted); }
+.system-card { display:flex; justify-content:space-between; align-items:center; gap:12px; border:1px solid var(--border); border-radius:var(--r-lg); padding:1rem; background:var(--surface); margin-bottom:1rem; }
+.system-card strong { display:block; font-family:var(--serif); font-size:1.35rem; }.system-label { display:block; color:var(--muted); font-size:.72rem; text-transform:uppercase; font-weight:700; }
+.system-db { color:var(--muted); font-size:.82rem; }.system-result { min-height:1.5rem; margin:1rem 0; }.system-progress { padding-left:1.5rem; line-height:1.9; }.system-progress .done { color:#287a45; }.error { color:#991b1b !important; }
+.system-modal { max-width:420px; }.system-modal-body { padding:1.25rem 1.5rem; }.system-modal-body p { margin-top:0; color:var(--muted); }.system-modal-body input { width:100%; }
 
 .content { flex: 1; padding: 1.5rem; max-width: 1100px; width: 100%; margin: 0 auto; }
 

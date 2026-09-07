@@ -10,6 +10,16 @@ def test_init_db_creates_kochmodus_schema(client):
                   AND COLUMN_NAME='schritte_quelle'
             """)
             assert cur.fetchone()
+
+
+def test_init_db_creates_system_updates_schema(client):
+    from db import get_db, init_db
+    init_db()
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT TABLE_NAME FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='system_updates'""")
+            assert cur.fetchone()
             cur.execute("""
                 SELECT TABLE_NAME FROM information_schema.TABLES
                 WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='rezept_schritte'

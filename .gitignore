@@ -30,3 +30,6 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# Lokale Update-Backups enthalten Datenbank- und Konfigurationskopien.
+backups/

@@ -1,5 +1,6 @@
 """Rezeptify v2.0 — FastAPI entry point."""
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -7,7 +8,17 @@ from fastapi.responses import FileResponse
 
 from config import BASE_DIR, UPLOAD_DIR, APP_TITLE, DEBUG
 from db import init_db
-from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag
+from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system
+
+
+def _read_version() -> str:
+    try:
+        return (Path(BASE_DIR) / "VERSION").read_text(encoding="utf-8").strip() or "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
+APP_VERSION = _read_version()
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -15,6 +26,12 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Reaching startup after systemctl proves the requested restart completed.
+    from db import get_db
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""UPDATE system_updates SET status='abgeschlossen', beendet_am=NOW()
+                WHERE status='neustart_ausgeloest'""")
     yield
 
 
@@ -46,6 +63,8 @@ app.include_router(meta.router)
 app.include_router(kochen.router)
 app.include_router(einkauf.router)
 app.include_router(planung.router)
+app.include_router(system.public_router)
+app.include_router(system.router)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 

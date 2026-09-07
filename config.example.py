@@ -40,3 +40,10 @@ ALLOWED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
 # ── App ───────────────────────────────────────────────────────────────────────
 APP_TITLE = "Rezeptify"
 DEBUG     = False
+
+# ── Browser-Updates (nur serverseitig konfigurieren) ─────────────────────────
+# Diese Werte werden nie über eine HTTP-Anfrage entgegengenommen.
+UPDATE_GIT_REMOTE = "origin"
+UPDATE_GIT_BRANCH = "main"
+# Muss außerhalb von static/ liegen; Backups werden niemals vom Webserver ausgeliefert.
+BACKUP_DIR = BASE_DIR / "backups"

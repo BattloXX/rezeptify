@@ -19,3 +19,6 @@ MAX_UPLOAD_MB = 10
 ALLOWED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
 APP_TITLE = "Rezeptify Test"
 DEBUG = True
+UPDATE_GIT_REMOTE = "origin"
+UPDATE_GIT_BRANCH = "main"
+BACKUP_DIR = BASE_DIR / "backups"
