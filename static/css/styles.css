@@ -748,6 +748,9 @@ textarea.fc { height: auto; padding: 10px 11px; resize: vertical; }
 .bot-header { margin-bottom: 1.5rem; }
 .bot-header h2 { font-family: var(--serif); font-size: 1.5rem; font-weight: 800; margin-bottom: 0.3rem; }
 .bot-header p { color: var(--muted); font-size: 0.9rem; max-width: 540px; }
+.bot-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 1rem; }
+.bot-filter-check { display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px; border: 1.5px solid var(--border); border-radius: var(--r-sm); background: var(--surface); font-size: 0.8rem; font-weight: 600; }
+.bot-filter-check input { accent-color: var(--accent); }
 .bot-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1rem; }
 .bot-chip { background: var(--surface); border: 1.5px solid var(--border); border-radius: 40px; padding: 6px 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all var(--t); color: var(--n-600); }
 .bot-chip:hover { border-color: var(--accent); color: var(--accent); background: var(--a-50); }

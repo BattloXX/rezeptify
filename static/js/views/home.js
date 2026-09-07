@@ -12,6 +12,12 @@ export function initHome() {
   window.setSort       = setSort;
   window.loadGrid      = loadGrid;
   window.filterByTag   = filterByTag;
+  window.openQuickSuggestion = openQuickSuggestion;
+}
+
+function openQuickSuggestion(filters) {
+  window.showView?.('bot');
+  window.openVorschlag?.(filters);
 }
 
 export async function loadKats() {

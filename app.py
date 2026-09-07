@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from config import BASE_DIR, UPLOAD_DIR, APP_TITLE, DEBUG
 from db import init_db
-from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung
+from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -38,6 +38,7 @@ app.add_middleware(
     allow_credentials=True,
 )
 
+app.include_router(vorschlag.router)
 app.include_router(rezepte.router)
 app.include_router(bilder.router)
 app.include_router(ai.router)

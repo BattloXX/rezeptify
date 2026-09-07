@@ -84,6 +84,12 @@
         </button>
       </div>
 
+      <div class="bot-chips" aria-label="Schnellvorschläge">
+        <button class="bot-chip" onclick="openQuickSuggestion({max_zeit:30})">Unter 30 Minuten</button>
+        <button class="bot-chip" onclick="openQuickSuggestion({vegetarisch:true})">Vegetarisch</button>
+        <button class="bot-chip" onclick="openQuickSuggestion({text:'Pasta'})">Pasta</button>
+      </div>
+
       <div id="filters" class="filters">
         <div>
           <label class="filter-label">Kategorie</label>
@@ -198,8 +204,32 @@
     <!-- ── BOT view ───────────────────────────────────────────────────── -->
     <section id="view-bot" class="view">
       <div class="bot-header">
-        <h2>KI-Rezeptsuche</h2>
-        <p>Beschreibe was du kochen möchtest — ich suche im Web nach passenden Rezepten und extrahiere alle Zutaten in metrischen Einheiten.</p>
+        <h2>Was kochen wir?</h2>
+        <p>Durchsuche zuerst deine Sammlung. Falls nichts passt, kannst du anschließend im Internet suchen.</p>
+      </div>
+
+      <div class="bot-filters" aria-label="Vorschlagsfilter">
+        <select id="bot-f-zeit" class="filter-sel" aria-label="Maximale Zeit">
+          <option value="">Jede Dauer</option>
+          <option value="30">Max. 30 Min.</option>
+          <option value="45">Max. 45 Min.</option>
+          <option value="60">Max. 60 Min.</option>
+        </select>
+        <select id="bot-f-kat" class="filter-sel" aria-label="Kategorie"><option value="">Alle Kategorien</option></select>
+        <select id="bot-f-bewertung" class="filter-sel" aria-label="Mindestbewertung">
+          <option value="">Jede Bewertung</option>
+          <option value="3">Mind. 3 Sterne</option>
+          <option value="4">Mind. 4 Sterne</option>
+          <option value="5">5 Sterne</option>
+        </select>
+        <select id="bot-f-diff" class="filter-sel" aria-label="Schwierigkeit">
+          <option value="">Jede Schwierigkeit</option>
+          <option value="leicht">Einfach</option>
+          <option value="mittel">Mittel</option>
+          <option value="schwer">Schwer</option>
+        </select>
+        <label class="bot-filter-check"><input id="bot-f-vegetarisch" type="checkbox"> Vegetarisch</label>
+        <label class="bot-filter-check"><input id="bot-f-vegan" type="checkbox"> Vegan</label>
       </div>
 
       <div class="bot-chips">
@@ -212,12 +242,12 @@
       <textarea id="bot-inp" class="bot-textarea" rows="2"
         placeholder="Welches Rezept suchst du? Z.B. „Lasagne für 6 Personen" …"></textarea>
       <button class="btn btn-accent btn-full" style="margin-top:0.75rem" onclick="botSearch()">
-        <span class="material-symbols-outlined">search</span> Rezepte suchen
+        <span class="material-symbols-outlined">search</span> Eigene Rezepte suchen
       </button>
 
       <div id="bot-status" class="bot-status">
         <div class="bot-spinner"></div>
-        <span>KI sucht im Web nach Rezepten…</span>
+        <span>Rezepte werden gesucht…</span>
       </div>
 
       <div id="bot-results" class="bot-results">
@@ -343,8 +373,8 @@
       <span>Plan</span>
     </button>
     <button class="bnav-item" id="nav-bot" onclick="showView('bot')">
-      <span class="material-symbols-outlined">smart_toy</span>
-      <span>KI-Suche</span>
+      <span class="material-symbols-outlined">restaurant</span>
+      <span>Was kochen?</span>
     </button>
     <button class="bnav-item" id="nav-buch" onclick="showView('buch')">
       <span class="material-symbols-outlined">menu_book</span>
