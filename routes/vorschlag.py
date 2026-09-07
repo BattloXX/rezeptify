@@ -28,6 +28,7 @@ def get_vorschlaege(
     vegetarisch: Optional[bool] = Query(None),
     vegan: Optional[bool] = Query(None),
     favorit: Optional[bool] = Query(None),  # Reserved for Feature 5.
+    lange_nicht_gekocht: Optional[bool] = Query(None),
     bewertung_min: Optional[int] = Query(None, ge=1, le=5),
     schwierigkeit: Optional[str] = Query(None),
     text: Optional[str] = Query(None),
@@ -45,6 +46,8 @@ def get_vorschlaege(
     if vegan:
         where.append("JSON_SEARCH(r.tags, 'one', %s) IS NOT NULL")
         params.append("vegan")
+    if favorit:
+        where.append("r.favorit = 1")
     if bewertung_min is not None:
         where.append("r.bewertung >= %s")
         params.append(bewertung_min)
@@ -58,17 +61,15 @@ def get_vorschlaege(
                      "OR JSON_SEARCH(r.tags, 'one', %s) IS NOT NULL)")
         params.extend([text + "*", "%" + text + "%"])
 
-    # ``favorit`` is accepted now for forward-compatible clients.  There is no
-    # corresponding database field until Feature 5, so it intentionally has no
-    # effect here.
-    _ = favorit
     requested_ingredients = [part.strip().lower() for part in (zutaten or "").split(",") if part.strip()]
     sql_where = "WHERE " + " AND ".join(where) if where else ""
+    history_join = "LEFT JOIN (SELECT rezept_id, MAX(gekocht_am) AS zuletzt_gekocht, COUNT(*) AS anzahl_gekocht FROM kochhistorie GROUP BY rezept_id) h ON h.rezept_id = r.id"
+    order = "h.zuletzt_gekocht IS NOT NULL ASC, h.zuletzt_gekocht ASC, r.erstellt_am DESC" if lange_nicht_gekocht else "r.erstellt_am DESC"
 
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                f"SELECT r.* FROM rezepte r {sql_where} ORDER BY r.erstellt_am DESC LIMIT 200",
+                f"SELECT r.*, h.zuletzt_gekocht, COALESCE(h.anzahl_gekocht, 0) AS anzahl_gekocht FROM rezepte r {history_join} {sql_where} ORDER BY {order} LIMIT 200",
                 params,
             )
             rows = [clean_row(row) for row in cur.fetchall()]

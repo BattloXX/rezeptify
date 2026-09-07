@@ -42,9 +42,10 @@ def test_vorschlag_combines_time_category_tag_rating_and_text_filters(client):
     assert recipes[0]["bilder"] == []
 
 
-def test_vorschlag_filters_ingredients_and_accepts_ignored_favorit(client):
-    recipe(client, "Tomaten Suppe", zutaten=[{"menge": "2", "einheit": "Stk", "name": "Tomaten"}])
+def test_vorschlag_filters_ingredients_and_favorit(client):
+    tomato = recipe(client, "Tomaten Suppe", zutaten=[{"menge": "2", "einheit": "Stk", "name": "Tomaten"}])
     recipe(client, "Kartoffel Suppe", zutaten=[{"menge": "2", "einheit": "Stk", "name": "Kartoffeln"}])
+    assert client.patch(f"/api/rezepte/{tomato['id']}/favorit", json={"favorit": True}).status_code == 200
 
     response = client.get("/api/rezepte/vorschlag", params={"zutaten": "tomat", "favorit": True})
 

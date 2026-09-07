@@ -16,6 +16,8 @@ def get_rezepte(
     tag:           Optional[str] = Query(None),
     schwierigkeit: Optional[str] = Query(None),
     bewertung:     Optional[int] = Query(None),
+    nur_favoriten: Optional[bool] = Query(None),
+    nur_gekocht:   Optional[bool] = Query(None),
     sort:          Optional[str] = Query("neu"),
     limit:  int = Query(60, le=200),
     offset: int = Query(0),
@@ -32,17 +34,27 @@ def get_rezepte(
         where.append("JSON_SEARCH(r.tags, 'one', %s) IS NOT NULL"); params.append(tag)
     if bewertung:
         where.append("r.bewertung = %s"); params.append(bewertung)
+    if nur_favoriten:
+        where.append("r.favorit = 1")
+    if nur_gekocht:
+        where.append("COALESCE(h.anzahl_gekocht, 0) > 0")
 
     w = ("WHERE " + " AND ".join(where)) if where else ""
     order = {"sterne": "r.bewertung DESC, r.erstellt_am DESC",
              "name":   "r.titel ASC",
-             "neu":    "r.erstellt_am DESC"}.get(sort, "r.erstellt_am DESC")
+             "neu":    "r.erstellt_am DESC",
+             "favoriten": "r.favorit DESC, r.erstellt_am DESC",
+             "zuletzt_gekocht": "h.zuletzt_gekocht DESC, r.erstellt_am DESC",
+             "haeufig_gekocht": "COALESCE(h.anzahl_gekocht, 0) DESC, r.erstellt_am DESC",
+             "lange_nicht_gekocht": "h.zuletzt_gekocht IS NOT NULL ASC, h.zuletzt_gekocht ASC, r.erstellt_am DESC"}.get(sort, "r.erstellt_am DESC")
+
+    history_join = "LEFT JOIN (SELECT rezept_id, MAX(gekocht_am) AS zuletzt_gekocht, COUNT(*) AS anzahl_gekocht FROM kochhistorie GROUP BY rezept_id) h ON h.rezept_id = r.id"
 
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute(f"SELECT COUNT(*) AS n FROM rezepte r {w}", params)
+            cur.execute(f"SELECT COUNT(*) AS n FROM rezepte r {history_join} {w}", params)
             total = cur.fetchone()["n"]
-            cur.execute(f"SELECT r.* FROM rezepte r {w} ORDER BY {order} LIMIT %s OFFSET %s",
+            cur.execute(f"SELECT r.*, h.zuletzt_gekocht, COALESCE(h.anzahl_gekocht, 0) AS anzahl_gekocht FROM rezepte r {history_join} {w} ORDER BY {order} LIMIT %s OFFSET %s",
                         params + [limit, offset])
             rows = cur.fetchall()
             bilder_map = get_bilder_batch(cur, [r["id"] for r in rows])
@@ -59,7 +71,9 @@ def get_rezepte(
 def get_rezept_by_slug(slug: str):
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM rezepte WHERE slug=%s", (slug,))
+            cur.execute("""SELECT r.*, h.zuletzt_gekocht, COALESCE(h.anzahl_gekocht, 0) AS anzahl_gekocht
+                FROM rezepte r LEFT JOIN (SELECT rezept_id, MAX(gekocht_am) AS zuletzt_gekocht, COUNT(*) AS anzahl_gekocht FROM kochhistorie GROUP BY rezept_id) h ON h.rezept_id=r.id
+                WHERE r.slug=%s""", (slug,))
             row = cur.fetchone()
             if not row:
                 raise HTTPException(404, "Rezept nicht gefunden")
@@ -70,7 +84,9 @@ def get_rezept_by_slug(slug: str):
 def get_rezept(rid: int):
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM rezepte WHERE id=%s", (rid,))
+            cur.execute("""SELECT r.*, h.zuletzt_gekocht, COALESCE(h.anzahl_gekocht, 0) AS anzahl_gekocht
+                FROM rezepte r LEFT JOIN (SELECT rezept_id, MAX(gekocht_am) AS zuletzt_gekocht, COUNT(*) AS anzahl_gekocht FROM kochhistorie GROUP BY rezept_id) h ON h.rezept_id=r.id
+                WHERE r.id=%s""", (rid,))
             row = cur.fetchone()
             if not row:
                 raise HTTPException(404, "Rezept nicht gefunden")
@@ -88,6 +104,19 @@ def set_bewertung(rid: int, body: dict):
             if cur.rowcount == 0:
                 raise HTTPException(404, "Rezept nicht gefunden")
     return {"ok": True, "bewertung": sterne}
+
+
+@router.patch("/api/rezepte/{rid}/favorit")
+def set_favorit(rid: int, body: dict):
+    favorit = body.get("favorit")
+    if not isinstance(favorit, bool):
+        raise HTTPException(400, "favorit muss ein Boolean sein")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE rezepte SET favorit=%s WHERE id=%s", (favorit, rid))
+            if cur.rowcount == 0:
+                raise HTTPException(404, "Rezept nicht gefunden")
+    return {"ok": True, "favorit": favorit}
 
 
 @router.post("/api/rezepte", status_code=201)

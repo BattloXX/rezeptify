@@ -13,6 +13,18 @@ export function toast(msg, type = '') {
   _toastTimer = setTimeout(() => el.classList.remove('on'), 3500);
 }
 
+// Apply UI state before a small mutation request, and restore it on failure.
+export async function optimisticToggle({ apply, request, revert }) {
+  apply();
+  try {
+    return await request();
+  } catch (e) {
+    revert();
+    toast(e.message || 'Aktion fehlgeschlagen', 'err');
+    throw e;
+  }
+}
+
 // ── Number formatting for ingredient scaling ─────────────────────────────────
 export function formatNum(n) {
   if (n === 0) return '0';

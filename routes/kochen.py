@@ -76,3 +76,29 @@ def put_schritte(rid: int, body: dict):
             _get_recipe(cur, rid)
             _store_steps(cur, rid, texts, "manuell")
             return {"schritte": _read_steps(cur, rid), "quelle": "manuell"}
+
+
+@router.post("/api/rezepte/{rid}/kochen", status_code=201)
+def rezept_gekocht(rid: int, body: dict = None):
+    body = body or {}
+    portionen = body.get("portionen")
+    notiz = body.get("notiz")
+    bewertung = body.get("nachtraegliche_bewertung")
+    if portionen is not None and (not isinstance(portionen, int) or isinstance(portionen, bool) or portionen < 1):
+        raise HTTPException(400, "portionen muss eine positive Ganzzahl sein")
+    if notiz is not None and not isinstance(notiz, str):
+        raise HTTPException(400, "notiz muss Text sein")
+    if bewertung is not None and (not isinstance(bewertung, int) or isinstance(bewertung, bool) or bewertung not in range(1, 6)):
+        raise HTTPException(400, "nachtraegliche_bewertung muss zwischen 1 und 5 liegen")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            _get_recipe(cur, rid)
+            cur.execute("""INSERT INTO kochhistorie
+                (rezept_id, portionen_verwendet, notiz, nachtraegliche_bewertung)
+                VALUES (%s, %s, %s, %s)""", (rid, portionen, notiz, bewertung))
+            history_id = cur.lastrowid
+            cur.execute("SELECT gekocht_am FROM kochhistorie WHERE id=%s", (history_id,))
+            gekocht_am = cur.fetchone()["gekocht_am"]
+            cur.execute("SELECT COUNT(*) AS anzahl_gekocht, MAX(gekocht_am) AS zuletzt_gekocht FROM kochhistorie WHERE rezept_id=%s", (rid,))
+            aggregate = cur.fetchone()
+    return {"ok": True, "id": history_id, "gekocht_am": gekocht_am, **aggregate}

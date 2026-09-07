@@ -1,5 +1,5 @@
 import { api, apiFetch } from '../api.js';
-import { toast, x, EM, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
+import { toast, x, EM, optimisticToggle, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
 import { S } from '../app.js';
 import { loadGrid } from './home.js';
 import { openEditForm } from './form.js';
@@ -85,7 +85,9 @@ function buildDetailBody(r) {
       <span class="star-row-label">Bewertung</span>
       <div class="stars" id="detail-stars">${renderDetailStars(r.bewertung, r.id)}</div>
       <span class="star-hint" id="star-hint">${r.bewertung ? starLabel(r.bewertung) : 'Tippen zum Bewerten'}</span>
+      <button class="detail-favorite${r.favorit ? ' on' : ''}" id="detail-favorite" onclick="toggleDetailFavorite()" aria-label="${r.favorit ? 'Favorit entfernen' : 'Als Favorit markieren'}">${r.favorit ? '♥' : '♡'}</button>
     </div>
+    <div class="cook-history" id="cook-history">${renderCookHistory(r)}</div>
     <div class="detail-actions">
       <button class="act-btn act-btn-cook" onclick="startKochmodus(${r.id})">
         <span class="material-symbols-outlined">skillet</span>Jetzt kochen
@@ -101,6 +103,9 @@ function buildDetailBody(r) {
       </button>
       <button class="act-btn" onclick="openPlanOverlay()">
         <span class="material-symbols-outlined">calendar_add_on</span>Für diese Woche planen
+      </button>
+      <button class="act-btn" onclick="markCookedToday()" id="btn-cooked-today">
+        <span class="material-symbols-outlined">restaurant</span>Heute gekocht
       </button>
       <button class="act-btn" onclick="exportPDF()">
         <span class="material-symbols-outlined">picture_as_pdf</span>PDF
@@ -147,32 +152,33 @@ window.scalePortion = scalePortion;
 async function setBewertung(rid, sterne) {
   const current = S.current?.bewertung || 0;
   const newVal  = current === sterne ? null : sterne;
-  try {
-    await api('/api/rezepte/' + rid + '/bewertung', {
-      method: 'PATCH', body: JSON.stringify({ sterne: newVal })
-    });
-    if (S.current) S.current.bewertung = newVal;
-    document.getElementById('detail-stars').innerHTML = renderDetailStars(newVal, rid);
+  const update = (value) => {
+    if (S.current) S.current.bewertung = value;
+    document.getElementById('detail-stars').innerHTML = renderDetailStars(value, rid);
     const hint = document.getElementById('star-hint');
-    if (hint) hint.textContent = newVal ? starLabel(newVal) : 'Tippen zum Bewerten';
+    if (hint) hint.textContent = value ? starLabel(value) : 'Tippen zum Bewerten';
     const rezept = S.rezepte?.find(r => r.id === rid);
     if (rezept) {
-      rezept.bewertung = newVal;
+      rezept.bewertung = value;
       const card = document.querySelector(`#grid .card[data-id="${rid}"]`);
       if (card) {
         const starDiv = card.querySelector('.card-stars');
-        if (newVal) {
-          const ns = document.createElement('div');
-          ns.innerHTML = renderCardStars(newVal);
+        if (value) {
+          const ns = document.createElement('div'); ns.innerHTML = renderCardStars(value);
           if (starDiv) starDiv.replaceWith(ns.firstChild);
-          else card.querySelector('.card-body').insertAdjacentHTML('beforeend', renderCardStars(newVal));
-        } else if (starDiv) {
-          starDiv.remove();
-        }
+          else card.querySelector('.card-body').insertAdjacentHTML('beforeend', renderCardStars(value));
+        } else if (starDiv) starDiv.remove();
       }
     }
+  };
+  try {
+    await optimisticToggle({
+      apply: () => update(newVal),
+      request: () => api('/api/rezepte/' + rid + '/bewertung', { method: 'PATCH', body: JSON.stringify({ sterne: newVal }) }),
+      revert: () => update(current),
+    });
     toast(newVal ? '⭐'.repeat(newVal) + ' – ' + starLabel(newVal) : 'Bewertung entfernt', 'ok');
-  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+  } catch (_) { /* The helper already restored state and showed a toast. */ }
 }
 window.setBewertung = setBewertung;
 
@@ -195,6 +201,45 @@ function resetStarPreview(rid, bewertung) {
   if (hint) hint.textContent = bewertung ? starLabel(bewertung) : 'Tippen zum Bewerten';
 }
 window.resetStarPreview = resetStarPreview;
+
+function renderCookHistory(r) {
+  const last = r.zuletzt_gekocht ? new Date(r.zuletzt_gekocht).toLocaleDateString('de-AT') : 'Noch nicht gekocht';
+  return `<span>Zuletzt gekocht: <strong>${last}</strong></span><span>Insgesamt gekocht: <strong>${r.anzahl_gekocht || 0}×</strong></span>`;
+}
+
+async function toggleDetailFavorite() {
+  if (!S.current) return;
+  const old = Boolean(S.current.favorit);
+  const update = (value) => {
+    S.current.favorit = value;
+    const button = document.getElementById('detail-favorite');
+    if (button) { button.classList.toggle('on', value); button.textContent = value ? '♥' : '♡'; }
+    document.querySelectorAll(`.card[data-id="${S.current.id}"] .card-favorite`).forEach(card => {
+      card.classList.toggle('on', value); card.textContent = value ? '♥' : '♡';
+    });
+    const listRecipe = S.rezepte?.find(r => r.id === S.current.id);
+    if (listRecipe) listRecipe.favorit = value;
+  };
+  try {
+    await optimisticToggle({ apply: () => update(!old), request: () => api('/api/rezepte/' + S.current.id + '/favorit', { method: 'PATCH', body: JSON.stringify({ favorit: !old }) }), revert: () => update(old) });
+  } catch (_) { /* The helper already restored state and showed a toast. */ }
+}
+window.toggleDetailFavorite = toggleDetailFavorite;
+
+async function markCookedToday() {
+  if (!S.current) return;
+  try {
+    const result = await api('/api/rezepte/' + S.current.id + '/kochen', { method: 'POST', body: JSON.stringify({}) });
+    S.current.zuletzt_gekocht = result.zuletzt_gekocht;
+    S.current.anzahl_gekocht = result.anzahl_gekocht;
+    const history = document.getElementById('cook-history');
+    if (history) history.innerHTML = renderCookHistory(S.current);
+    const listRecipe = S.rezepte?.find(r => r.id === S.current.id);
+    if (listRecipe) Object.assign(listRecipe, { zuletzt_gekocht: result.zuletzt_gekocht, anzahl_gekocht: result.anzahl_gekocht });
+    toast('Als heute gekocht gespeichert', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+window.markCookedToday = markCookedToday;
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 function copyZutaten() {

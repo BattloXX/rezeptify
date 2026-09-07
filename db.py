@@ -39,7 +39,7 @@ def parse_json_field(val):
 def clean_row(row: dict) -> dict:
     row["zutaten"] = parse_json_field(row.get("zutaten"))
     row["tags"] = parse_json_field(row.get("tags"))
-    for f in ("erstellt_am", "geaendert_am"):
+    for f in ("erstellt_am", "geaendert_am", "zuletzt_gekocht"):
         if row.get(f) and not isinstance(row[f], str):
             row[f] = row[f].isoformat()
     return row
@@ -166,6 +166,19 @@ def init_db():
                     FOREIGN KEY (rezept_id) REFERENCES rezepte(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS kochhistorie (
+                    id                       INT AUTO_INCREMENT PRIMARY KEY,
+                    rezept_id                INT NOT NULL,
+                    gekocht_am               DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    portionen_verwendet      SMALLINT NULL,
+                    notiz                    TEXT NULL,
+                    nachtraegliche_bewertung TINYINT NULL,
+                    erstellt_am              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_kochhistorie_rezept_gekocht (rezept_id, gekocht_am),
+                    FOREIGN KEY (rezept_id) REFERENCES rezepte(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
             for k in ["Frühstück","Vorspeise","Hauptgericht","Dessert","Snack",
                       "Getränk","Backen","Salat","Suppe","Sonstiges"]:
                 cur.execute("INSERT IGNORE INTO kategorien (name) VALUES (%s)", (k,))
@@ -177,6 +190,7 @@ def init_db():
             ("bewertung",           "ADD COLUMN bewertung TINYINT DEFAULT NULL AFTER quelle_typ"),
             ("quelldatei",          "ADD COLUMN quelldatei VARCHAR(255) DEFAULT NULL AFTER quelle_typ"),
             ("schritte_quelle",     "ADD COLUMN schritte_quelle ENUM('keine','auto','manuell') DEFAULT 'keine' AFTER zubereitung"),
+            ("favorit",              "ADD COLUMN favorit TINYINT(1) NOT NULL DEFAULT 0 AFTER bewertung"),
         ]:
             with conn.cursor() as cur:
                 cur.execute("""

@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { toast, x, EM, renderCardStars } from '../utils.js';
+import { toast, x, EM, optimisticToggle, renderCardStars } from '../utils.js';
 import { S } from '../app.js';
 import { openDetail } from './detail.js';
 
@@ -57,6 +57,7 @@ export async function loadGrid() {
     S.rezepte = data.items;
     S.total   = data.total;
     renderGrid();
+    loadHistorySections();
     const tc = document.getElementById('topbar-count');
     if (tc) tc.textContent = S.total + ' Rezepte';
   } catch(e) {
@@ -101,7 +102,11 @@ function renderGrid() {
     </div>`;
     return;
   }
-  g.innerHTML = S.rezepte.map(r => {
+  g.innerHTML = renderRecipeCards(S.rezepte);
+}
+
+function renderRecipeCards(recipes, compact = false) {
+  return recipes.map(r => {
     const em       = EM[r.kategorie] || '🍴';
     const img      = r.haupt_bild || r.bilder?.[0]?.url;
     const thumb    = img
@@ -115,8 +120,9 @@ function renderGrid() {
       ? `<span class="card-img-count"><span class="material-symbols-outlined">photo_library</span>${imgCount}</span>` : '';
     const kcalHtml = r.kalorien_pro_portion
       ? `<span class="card-meta-i card-kcal">${r.kalorien_pro_portion} <span style="font-weight:400;font-size:0.9em">kcal</span></span>` : '';
-    return `<article class="card" data-id="${r.id}" onclick="openDetail(${r.id})">
+    return `<article class="card${compact ? ' history-card' : ''}" data-id="${r.id}" onclick="openDetail(${r.id})">
       <div class="card-thumb">${thumb}${badge}${countBadge}
+        <button class="card-favorite${r.favorit ? ' on' : ''}" aria-label="${r.favorit ? 'Favorit entfernen' : 'Als Favorit markieren'}" onclick="toggleFavorite(event,${r.id})">${r.favorit ? '♥' : '♡'}</button>
         <div class="card-hover-overlay">
           <span class="card-hover-label">Öffnen</span>
           <span class="material-symbols-outlined card-hover-arrow">arrow_forward</span>
@@ -136,6 +142,54 @@ function renderGrid() {
     </article>`;
   }).join('');
 }
+
+async function loadHistorySections() {
+  const container = document.getElementById('home-history-sections');
+  if (!container) return;
+  const sections = [
+    ['Favoriten', 'sort=favoriten&nur_favoriten=true'],
+    ['Zuletzt gekocht', 'sort=zuletzt_gekocht&nur_gekocht=true'],
+    ['Häufig gekocht', 'sort=haeufig_gekocht&nur_gekocht=true'],
+    ['Lange nicht gekocht', 'sort=lange_nicht_gekocht'],
+  ];
+  const results = await Promise.all(sections.map(async ([title, query]) => {
+    try {
+      const data = await api('/api/rezepte?' + query + '&limit=10');
+      return { title, items: data.items };
+    } catch { return { title, items: [] }; }
+  }));
+  container.innerHTML = results.filter(section => section.items.length).map(section => `
+    <section class="home-history-section">
+      <h2>${section.title}</h2>
+      <div class="home-history-row">${renderRecipeCards(section.items, true)}</div>
+    </section>`).join('');
+}
+
+async function toggleFavorite(event, rid) {
+  event.stopPropagation();
+  const recipe = (S.rezepte || []).find(r => r.id === rid)
+    || (S.current?.id === rid ? S.current : { id: rid, favorit: event.currentTarget.classList.contains('on') });
+  const old = Boolean(recipe.favorit);
+  const update = (value) => {
+    recipe.favorit = value;
+    const listRecipe = S.rezepte?.find(r => r.id === rid);
+    if (listRecipe) listRecipe.favorit = value;
+    if (S.current?.id === rid) S.current.favorit = value;
+    document.querySelectorAll(`.card[data-id="${rid}"] .card-favorite`).forEach(button => {
+      button.classList.toggle('on', value);
+      button.textContent = value ? '♥' : '♡';
+      button.setAttribute('aria-label', value ? 'Favorit entfernen' : 'Als Favorit markieren');
+    });
+  };
+  try {
+    await optimisticToggle({
+      apply: () => update(!old),
+      request: () => api('/api/rezepte/' + rid + '/favorit', { method: 'PATCH', body: JSON.stringify({ favorit: !old }) }),
+      revert: () => update(old),
+    });
+  } catch (_) { /* The helper already restored state and showed a toast. */ }
+}
+window.toggleFavorite = toggleFavorite;
 
 function filterByTag(tag) {
   const el = document.getElementById('ov-detail');

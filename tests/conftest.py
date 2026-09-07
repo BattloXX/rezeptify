@@ -46,5 +46,6 @@ def client():
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM einkaufsliste_eintraege")
                 cur.execute("DELETE FROM wochenplan")
+                cur.execute("DELETE FROM kochhistorie")
                 cur.execute("DELETE FROM rezepte")
         yield test_client
