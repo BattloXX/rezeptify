@@ -82,7 +82,7 @@ function renderBotResults(data, q) {
       r.schwierigkeit
     ].filter(Boolean);
     const ings  = (r.zutaten||[]).filter(z => !z.gruppe).slice(0, 4);
-    const src   = data.quellen?.[i];
+    const src   = r.suchinfo;
     return `<div class="bot-card">
       <div class="bot-card-rank"># ${i+1}</div>
       <div class="bot-card-body">

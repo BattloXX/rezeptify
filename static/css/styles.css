@@ -582,6 +582,7 @@ a { color: inherit; text-decoration: none; }
 .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.5rem; }
 .act-btn { display: flex; align-items: center; gap: 5px; height: 38px; padding: 0 14px; border: 1.5px solid var(--border); border-radius: var(--r-sm); background: var(--surface); font-size: 0.8rem; font-weight: 700; color: var(--n-600); transition: all var(--t); font-family: var(--serif); }
 .act-btn:hover { border-color: var(--accent); color: var(--accent); }
+.act-btn-cook { border-color: var(--accent); color: var(--accent); background: var(--a-50); }
 .act-btn.copied, .act-btn.share-ok { border-color: #065f46; color: #065f46; background: #ecfdf5; }
 .act-btn .material-symbols-outlined { font-size: 15px; }
 
@@ -610,6 +611,19 @@ a { color: inherit; text-decoration: none; }
 .tags-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag-pill { background: var(--n-100); border-radius: 40px; padding: 4px 12px; font-size: 0.76rem; font-weight: 700; color: var(--n-600); cursor: pointer; transition: all var(--t); font-family: var(--serif); }
 .tag-pill:hover { background: var(--n-950); color: white; }
+
+/* ════════════════════════════════════════════════════
+   KOCHMODUS
+════════════════════════════════════════════════════ */
+.kochmodus-view { position: fixed; inset: 0; z-index: 200; background: var(--bg); padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)); overflow-y: auto; }
+.kochmodus-active .topbar, .kochmodus-active .content, .kochmodus-active .bottomnav { display: none; }
+.km-header { max-width: 800px; margin: 0 auto 1.5rem; display: flex; align-items: center; gap: 12px; }
+.km-close, .km-wake { min-height: 48px; border: 1.5px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; font: 700 .78rem var(--serif); }
+.km-close .material-symbols-outlined { font-size: 22px; }.km-header > div { flex: 1; min-width: 0; }.km-overline { color: var(--accent); font: 800 .68rem var(--serif); letter-spacing: .15em; text-transform: uppercase; }.km-header h2 { font: 800 clamp(1.25rem, 5vw, 2rem)/1.1 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }.km-wake.on { color: var(--accent); border-color: var(--accent); }
+.km-progress { max-width: 800px; margin: 0 auto 1.5rem; color: var(--muted); font: 700 .78rem var(--serif); }.km-progress > div { height: 8px; background: var(--n-100); border-radius: 20px; margin-top: 8px; overflow: hidden; }.km-progress i { height: 100%; width: 0; display: block; background: var(--accent); border-radius: inherit; transition: width .2s ease; }
+.km-step { max-width: 800px; min-height: 42dvh; margin: 0 auto; padding: clamp(1.25rem, 5vw, 3rem); background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r-xl); display: flex; flex-direction: column; justify-content: center; }.km-step-text { white-space: pre-wrap; font: 600 clamp(1.35rem, 5vw, 2.25rem)/1.5 var(--serif); }.km-ingredients { margin-top: 1.5rem; color: var(--muted); font-size: .95rem; }.km-ingredients ul { margin: .5rem 0 0 1.25rem; line-height: 1.6; }.km-timer-start { margin-top: 1.5rem; min-height: 52px; align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; border: none; border-radius: var(--r-sm); background: var(--accent); color: white; font: 700 1rem var(--serif); }
+.km-timers { max-width: 800px; margin: 1rem auto; display: flex; flex-wrap: wrap; gap: 8px; }.km-timer { background: var(--n-950); color: white; border-radius: 30px; padding: 9px 13px; display: flex; gap: 6px; align-items: center; font: 700 .82rem var(--serif); }.km-timer.done { background: #065f46; }.km-timer .material-symbols-outlined { font-size: 17px; }
+.km-controls { max-width: 800px; margin: 1.25rem auto 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }.km-controls button { min-height: 60px; border: 1.5px solid var(--border); border-radius: var(--r); background: var(--surface); color: var(--text); font: 800 1rem var(--serif); display: flex; align-items: center; justify-content: center; gap: 8px; }.km-controls button.primary { background: var(--accent); border-color: var(--accent); color: white; }.km-controls button:disabled { opacity: .4; }
 
 /* ════════════════════════════════════════════════════
    FORM MODAL

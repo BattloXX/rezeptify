@@ -3,6 +3,7 @@ import { toast, x, EM, scaleAmount, STAR_LABELS, renderDetailStars, renderCardSt
 import { S } from '../app.js';
 import { loadGrid } from './home.js';
 import { openEditForm } from './form.js';
+import { startKochmodus } from './kochmodus.js';
 
 let portionState = { base: 4, current: 4 };
 
@@ -86,6 +87,9 @@ function buildDetailBody(r) {
       <span class="star-hint" id="star-hint">${r.bewertung ? starLabel(r.bewertung) : 'Tippen zum Bewerten'}</span>
     </div>
     <div class="detail-actions">
+      <button class="act-btn act-btn-cook" onclick="startKochmodus(${r.id})">
+        <span class="material-symbols-outlined">skillet</span>Jetzt kochen
+      </button>
       <button class="act-btn" onclick="shareRezept()" id="btn-share">
         <span class="material-symbols-outlined">share</span>Teilen
       </button>
@@ -209,6 +213,7 @@ function copyZutaten() {
   }).catch(() => toast('Kopieren fehlgeschlagen', 'err'));
 }
 window.copyZutaten = copyZutaten;
+window.startKochmodus = startKochmodus;
 
 function copyZutat(btn, text) {
   navigator.clipboard.writeText(text).then(() => {

@@ -295,6 +295,22 @@
 
   </div><!-- /.content -->
 
+  <!-- ── KOCHMODUS view ─────────────────────────────────────────────── -->
+  <section id="view-kochmodus" class="view kochmodus-view" aria-live="polite">
+    <header class="km-header">
+      <button class="km-close" onclick="exitKochmodus()" aria-label="Kochmodus verlassen"><span class="material-symbols-outlined">close</span></button>
+      <div><span class="km-overline">Kochmodus</span><h2 id="km-title">Kochmodus</h2></div>
+      <button id="km-wake" class="km-wake" onclick="toggleWakeLock()" hidden></button>
+    </header>
+    <div class="km-progress"><span id="km-progress-label">Schritt 1</span><div><i id="km-progress-bar"></i></div></div>
+    <main id="km-step" class="km-step"></main>
+    <div id="km-timers" class="km-timers" aria-live="polite"></div>
+    <footer class="km-controls">
+      <button id="km-prev" onclick="kochPrev()"><span class="material-symbols-outlined">arrow_back</span>Zurück</button>
+      <button id="km-next" class="primary" onclick="kochNext()">Weiter<span class="material-symbols-outlined">arrow_forward</span></button>
+    </footer>
+  </section>
+
   <!-- Bottom navigation -->
   <nav class="bottomnav">
     <button class="bnav-item on" id="nav-home" onclick="showView('home')">

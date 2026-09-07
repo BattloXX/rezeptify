@@ -1,0 +1,24 @@
+services:
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: rezeptify_test
+      MARIADB_USER: rezeptify
+      MARIADB_PASSWORD: rezeptify
+      MARIADB_ROOT_PASSWORD: root
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      TEST_DB_HOST: db
+      TEST_DB_PORT: 3306
+    depends_on:
+      db:
+        condition: service_healthy

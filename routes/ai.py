@@ -138,7 +138,7 @@ async def analysiere_bild(file: UploadFile = File(...)):
 
 @router.post("/api/rezept-suche")
 def rezept_suche(body: dict):
-    anfrage = body.get("anfrage", "").strip()
+    anfrage = (body.get("anfrage") or body.get("query") or "").strip()
     if not anfrage:
         raise HTTPException(400, "Anfrage fehlt")
     check_api_key()
@@ -198,4 +198,4 @@ def rezept_suche(body: dict):
     if not results:
         raise HTTPException(422, "Keine passenden Rezepte gefunden")
 
-    return results
+    return {"rezepte": results}

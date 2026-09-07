@@ -125,6 +125,19 @@ def init_db():
                     name VARCHAR(100) UNIQUE NOT NULL
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS rezept_schritte (
+                    id              INT AUTO_INCREMENT PRIMARY KEY,
+                    rezept_id       INT NOT NULL,
+                    position        SMALLINT NOT NULL,
+                    text            TEXT NOT NULL,
+                    zutaten_indices JSON NULL,
+                    timer_sekunden  INT NULL,
+                    erstellt_am     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_rezept_schritte_position (rezept_id, position),
+                    FOREIGN KEY (rezept_id) REFERENCES rezepte(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
             for k in ["Frühstück","Vorspeise","Hauptgericht","Dessert","Snack",
                       "Getränk","Backen","Salat","Suppe","Sonstiges"]:
                 cur.execute("INSERT IGNORE INTO kategorien (name) VALUES (%s)", (k,))
@@ -135,6 +148,7 @@ def init_db():
             ("kalorien_pro_portion","ADD COLUMN kalorien_pro_portion INT DEFAULT NULL AFTER bewertung"),
             ("bewertung",           "ADD COLUMN bewertung TINYINT DEFAULT NULL AFTER quelle_typ"),
             ("quelldatei",          "ADD COLUMN quelldatei VARCHAR(255) DEFAULT NULL AFTER quelle_typ"),
+            ("schritte_quelle",     "ADD COLUMN schritte_quelle ENUM('keine','auto','manuell') DEFAULT 'keine' AFTER zubereitung"),
         ]:
             with conn.cursor() as cur:
                 cur.execute("""
