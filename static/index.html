@@ -400,27 +400,27 @@
 
   <!-- Bottom navigation -->
   <nav class="bottomnav">
-    <button class="bnav-item on" id="nav-home" onclick="showView('home')">
+    <button class="bnav-item on" id="nav-home" onclick="showView('home')" aria-label="Rezepte">
       <span class="material-symbols-outlined">home</span>
       <span>Rezepte</span>
     </button>
-    <button class="bnav-item" id="nav-import" onclick="showView('import')">
+    <button class="bnav-item" id="nav-import" onclick="showView('import')" aria-label="Import">
       <span class="material-symbols-outlined">add_circle</span>
       <span>Import</span>
     </button>
-    <button class="bnav-item" id="nav-einkauf" onclick="showView('einkauf')">
+    <button class="bnav-item" id="nav-einkauf" onclick="showView('einkauf')" aria-label="Einkaufsliste">
       <span class="material-symbols-outlined">shopping_cart</span>
       <span>Einkauf</span>
     </button>
-    <button class="bnav-item" id="nav-wochenplan" onclick="showView('wochenplan')">
+    <button class="bnav-item" id="nav-wochenplan" onclick="showView('wochenplan')" aria-label="Wochenplan">
       <span class="material-symbols-outlined">calendar_month</span>
       <span>Plan</span>
     </button>
-    <button class="bnav-item" id="nav-bot" onclick="showView('bot')">
+    <button class="bnav-item" id="nav-bot" onclick="showView('bot')" aria-label="Was kochen">
       <span class="material-symbols-outlined">restaurant</span>
       <span>Was kochen?</span>
     </button>
-    <button class="bnav-item" id="nav-buch" onclick="showView('buch')">
+    <button class="bnav-item" id="nav-buch" onclick="showView('buch')" aria-label="Rezeptbuch">
       <span class="material-symbols-outlined">menu_book</span>
       <span>Buch</span>
     </button>
@@ -451,6 +451,9 @@
       <span id="d-emoji" class="d-hero-emoji">🍽️</span>
       <div id="d-grad" class="d-hero-grad" style="display:none"></div>
       <div class="d-hero-actions">
+        <button class="round-btn d-cook-quick" onclick="startCurrentKochmodus()" title="Jetzt kochen" aria-label="Jetzt kochen">
+          <span class="material-symbols-outlined">skillet</span>
+        </button>
         <button class="round-btn" onclick="editCurrent()" title="Bearbeiten">
           <span class="material-symbols-outlined">edit</span>
         </button>

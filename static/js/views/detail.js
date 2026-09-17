@@ -266,6 +266,11 @@ function copyZutaten() {
 window.copyZutaten = copyZutaten;
 window.startKochmodus = startKochmodus;
 
+function startCurrentKochmodus() {
+  if (S.current?.id) startKochmodus(S.current.id);
+}
+window.startCurrentKochmodus = startCurrentKochmodus;
+
 function copyZutat(btn, text) {
   navigator.clipboard.writeText(text).then(() => {
     btn.classList.add('done');
