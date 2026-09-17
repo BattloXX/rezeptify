@@ -14,7 +14,7 @@ def upload_bild(rid: int, file: UploadFile = File(...), ist_haupt: bool = Form(F
         with conn.cursor() as cur:
             if not cur.execute("SELECT 1 FROM rezepte WHERE id=%s", (rid,)):
                 raise HTTPException(404, "Rezept nicht gefunden")
-    ext = Path(file.filename).suffix.lower()
+    ext = Path(file.filename or "").suffix.lower()
     fname = validate_and_save(file.file.read(), ext)
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -28,7 +28,7 @@ def upload_bild(rid: int, file: UploadFile = File(...), ist_haupt: bool = Form(F
 @router.post("/api/rezepte/{rid}/bilder/attach")
 def attach_downloaded_bild(rid: int, body: dict):
     dateiname = body.get("dateiname", "").strip()
-    if not dateiname:
+    if not dateiname or Path(dateiname).name != dateiname:
         raise HTTPException(400, "dateiname fehlt")
     if not (UPLOAD_DIR / dateiname).exists():
         raise HTTPException(404, "Bilddatei nicht gefunden")

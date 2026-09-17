@@ -418,10 +418,13 @@ async function uploadThumb(e) {
   const fd = new FormData();
   fd.append('file', f);
   fd.append('ist_haupt', (!S.current.bilder?.length).toString());
-  await apiFetch('/api/rezepte/' + S.current.id + '/bilder', { method: 'POST', body: fd });
-  S.current = await api('/api/rezepte/' + S.current.id);
-  renderDetail(S.current);
-  toast('Bild hinzugefügt ✓', 'ok');
+  try {
+    await apiFetch('/api/rezepte/' + S.current.id + '/bilder', { method: 'POST', body: fd });
+    S.current = await api('/api/rezepte/' + S.current.id);
+    renderDetail(S.current);
+    toast('Bild hinzugefügt ✓', 'ok');
+  } catch (err) { toast(err.message, 'err'); }
+  finally { e.target.value = ''; }
 }
 window.uploadThumb = uploadThumb;
 

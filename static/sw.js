@@ -1,4 +1,4 @@
-const CACHE = 'rezeptify-v2';
+const CACHE = 'rezeptify-v3';
 const SHELL = [
   '/',
   '/static/manifest.json',

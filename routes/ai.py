@@ -9,6 +9,7 @@ from services.claude_service import (
 from services.image_service import (
     extract_best_image, download_image, search_recipe_image, resize_and_save,
 )
+from services.structured_recipe_service import parse_structured_recipe
 from auth import require_auth
 import httpx
 
@@ -76,13 +77,38 @@ def analysiere_url(body: dict):
 
 @router.post("/api/analysiere-bild")
 async def analysiere_bild(file: UploadFile = File(...)):
-    check_api_key()
-    ext = Path(file.filename).suffix.lower()
+    ext = Path(file.filename or "").suffix.lower()
     data = await file.read()
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, f"Datei zu groß (max {MAX_UPLOAD_MB} MB)")
 
+    # JSON recipe files never touch Claude. They intentionally use the same
+    # upload endpoint as PDFs/images so the UI has one import flow.
+    if ext == ".json":
+        recipe, image_url = parse_structured_recipe(data)
+        image_name = None
+        if image_url:
+            image_name = download_image(image_url, image_url)
+            if not image_name:
+                raise HTTPException(422, "image_url konnte nicht als Bild geladen werden")
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        orig_fname = f"src_{uuid.uuid4().hex}.json"
+        (UPLOAD_DIR / orig_fname).write_bytes(data)
+        result = recipe.model_dump()
+        result.update({"quelldatei": orig_fname, "structured_import": True})
+        if image_name:
+            result["downloaded_image"] = image_name
+        return result
+
+    check_api_key()
+
+    media_map = {".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".png":"image/png",
+                 ".webp":"image/webp", ".gif":"image/gif", ".heic":"image/jpeg"}
+    if ext != ".pdf" and ext not in media_map:
+        raise HTTPException(400, f"Format nicht unterstützt: {ext} (JPG, PNG, WebP, PDF, JSON)")
+
     # Originaldatei dauerhaft speichern
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     orig_fname = f"src_{uuid.uuid4().hex}{ext}"
     (UPLOAD_DIR / orig_fname).write_bytes(data)
 
@@ -99,10 +125,6 @@ async def analysiere_bild(file: UploadFile = File(...)):
             ]}]
         )
     else:
-        media_map = {".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",
-                     ".webp":"image/webp",".gif":"image/gif",".heic":"image/jpeg"}
-        if ext not in media_map:
-            raise HTTPException(400, f"Format nicht unterstützt: {ext} (JPG, PNG, WebP, PDF)")
         b64 = base64.standard_b64encode(data).decode()
         msg = claude.messages.create(
             model=CLAUDE_MODEL, max_tokens=2000,

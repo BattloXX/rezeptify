@@ -29,13 +29,14 @@ function switchTab(name) {
 export function setImportFile(f) {
   S.importFile = f;
   const isPdf    = f.name.toLowerCase().endsWith('.pdf');
+  const isJson   = f.name.toLowerCase().endsWith('.json');
   const preview  = document.getElementById('dz-preview');
   const imgEl    = document.getElementById('dz-img');
   const pdfEl    = document.getElementById('dz-pdf');
   const nameEl   = document.getElementById('dz-name');
   if (!preview) return;
   preview.style.display = 'block';
-  if (isPdf) {
+  if (isPdf || isJson) {
     if (imgEl) imgEl.style.display = 'none';
     if (pdfEl) pdfEl.style.display = 'block';
     if (nameEl) nameEl.textContent = f.name;
@@ -46,6 +47,10 @@ export function setImportFile(f) {
   }
   const btn = document.getElementById('btn-file');
   if (btn) btn.disabled = false;
+  const label = document.getElementById('btn-file-label');
+  const icon = document.getElementById('btn-file-icon');
+  if (label) label.textContent = isJson ? 'Rezeptdatei prüfen' : 'Mit KI analysieren';
+  if (icon) icon.textContent = isJson ? 'fact_check' : 'auto_awesome';
 }
 
 async function doUrlAnalyse() {
@@ -66,7 +71,8 @@ async function doFileAnalyse() {
   if (!S.importFile) return;
   const btn = document.getElementById('btn-file');
   if (btn) btn.disabled = true;
-  showLoading(true);
+  const isJson = S.importFile.name.toLowerCase().endsWith('.json');
+  showLoading(true, isJson ? 'Rezeptdatei wird geprüft…' : 'KI analysiert Rezept…');
   const fd = new FormData();
   fd.append('file', S.importFile);
   try {
@@ -78,6 +84,10 @@ async function doFileAnalyse() {
 }
 
 function renderPreview(r) {
+  const previewHeader = document.querySelector('#preview-card .preview-hdr');
+  if (previewHeader) previewHeader.innerHTML = r.structured_import
+    ? '<span class="material-symbols-outlined">fact_check</span> Dateivorschau'
+    : '<span class="material-symbols-outlined">auto_awesome</span> Vorschau';
   const gz = (r.zeit_vorb||0) + (r.zeit_koch||0);
   const previewImg = r.downloaded_image
     ? `<img class="preview-img" src="/static/uploads/${x(r.downloaded_image)}" alt="${x(r.titel)}" onerror="this.remove()">` : '';
@@ -118,18 +128,20 @@ async function doImportSave() {
     if (S.importData.downloaded_image) {
       await api('/api/rezepte/'+r.id+'/bilder/attach', {
         method:'POST', body: JSON.stringify({ dateiname: S.importData.downloaded_image, ist_haupt: true })
-      }).catch(()=>{});
+      });
     }
     if (S.importData.import_image) {
       await api('/api/rezepte/'+r.id+'/bilder/attach', {
         method:'POST', body: JSON.stringify({ dateiname: S.importData.import_image, ist_haupt: false })
-      }).catch(()=>{});
+      });
     }
-    if (S.importFile && !('import_image' in S.importData) && !S.importFile.name.toLowerCase().endsWith('.pdf')) {
+    if (S.importFile && !('import_image' in S.importData) &&
+        !S.importFile.name.toLowerCase().endsWith('.pdf') &&
+        !S.importFile.name.toLowerCase().endsWith('.json')) {
       const fd = new FormData();
       fd.append('file', S.importFile);
       fd.append('ist_haupt', (!S.importData.downloaded_image).toString());
-      await apiFetch('/api/rezepte/'+r.id+'/bilder', { method:'POST', body: fd }).catch(()=>{});
+      await apiFetch('/api/rezepte/'+r.id+'/bilder', { method:'POST', body: fd });
     }
     toast('Rezept gespeichert ✓', 'ok');
     apiFetch('/api/rezepte/'+r.id+'/fetch-bild', { method:'POST' })
@@ -165,9 +177,15 @@ function resetDropzone() {
   if (bf) bf.disabled = true;
   const fi = document.getElementById('file-inp');
   if (fi) fi.value = '';
+  const label = document.getElementById('btn-file-label');
+  const icon = document.getElementById('btn-file-icon');
+  if (label) label.textContent = 'Mit KI analysieren';
+  if (icon) icon.textContent = 'auto_awesome';
 }
 
-function showLoading(on) {
+function showLoading(on, message = 'KI analysiert Rezept…') {
   document.getElementById('loading-box')?.classList.toggle('on', on);
+  const text = document.querySelector('#loading-box p');
+  if (text) text.textContent = message;
   if (on) document.getElementById('preview-card')?.classList.remove('on');
 }

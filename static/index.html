@@ -135,7 +135,8 @@
     <section id="view-import" class="view">
       <div class="import-header">
         <h2>Rezept importieren</h2>
-        <p>URL einfügen oder Bild/PDF hochladen — die KI extrahiert automatisch alle Daten.</p>
+        <p>URL einfügen oder Datei hochladen. PDF/Bild wird mit KI gelesen, Rezept-JSON wird ohne KI importiert.</p>
+        <button class="format-link" onclick="showView('format')">Rezept-JSON-Format ansehen</button>
       </div>
 
       <div class="tab-bar">
@@ -143,7 +144,7 @@
           <span class="material-symbols-outlined">link</span> URL
         </button>
         <button class="tab-btn" id="tab-file" onclick="switchTab('file')">
-          <span class="material-symbols-outlined">image</span> Bild / PDF
+          <span class="material-symbols-outlined">upload_file</span> Datei
         </button>
       </div>
 
@@ -166,10 +167,10 @@
           ondragover="doDragOver(event)" ondragleave="doDragLeave()" ondrop="doDrop(event)"
           onclick="document.getElementById('file-inp').click()">
           <div class="dropzone-icon"><span class="material-symbols-outlined" style="font-size:2.5rem">upload_file</span></div>
-          <p class="dropzone-title">Bild oder PDF hier ablegen</p>
-          <p class="dropzone-sub">oder klicken zum Auswählen · JPG, PNG, WebP, PDF</p>
+          <p class="dropzone-title">Bild, PDF oder Rezeptdatei hier ablegen</p>
+          <p class="dropzone-sub">oder klicken zum Auswählen · JPG, PNG, WebP, PDF, JSON</p>
         </div>
-        <input id="file-inp" type="file" accept="image/*,.pdf" style="display:none"
+        <input id="file-inp" type="file" accept="image/*,.pdf,application/json,.json" style="display:none"
           onchange="fileSelected(event)">
         <div id="dz-preview" class="dropzone-preview">
           <img id="dz-img" alt="" style="display:none">
@@ -179,7 +180,7 @@
           </div>
         </div>
         <button id="btn-file" class="btn btn-accent btn-full" onclick="doFileAnalyse()" disabled>
-          <span class="material-symbols-outlined">auto_awesome</span> Mit KI analysieren
+          <span id="btn-file-icon" class="material-symbols-outlined">auto_awesome</span><span id="btn-file-label">Mit KI analysieren</span>
         </button>
       </div>
 
@@ -204,6 +205,32 @@
           <button class="btn btn-ghost" onclick="clearPreview()" style="margin-left:auto">Verwerfen</button>
         </div>
       </div>
+    </section>
+
+    <!-- ── STRUCTURED FORMAT view ────────────────────────────────────── -->
+    <section id="view-format" class="view format-view">
+      <div class="format-header"><button class="act-btn" onclick="showView('import')"><span class="material-symbols-outlined">arrow_back</span>Zum Import</button><h2>Rezept-JSON-Format</h2><p>Eine <code>.json</code>-Datei wird deterministisch geprüft — ohne KI/LLM.</p></div>
+      <div class="format-card"><h3>Pflichtfelder</h3><p><code>format</code> muss genau <code>rezeptify-recipe/v1</code> sein. <code>title</code> ist Text. <code>ingredients</code> ist eine Liste mit <code>amount</code> (Text/Zahl), <code>unit</code> (Text), <code>name</code> (Text, Pflicht) und optional <code>group</code>. <code>steps</code> ist eine Liste nicht-leerer Textschritte.</p>
+      <h3>Optionale Felder</h3><p><code>description</code>, <code>servings</code> (positive Zahl), <code>prep_minutes</code>, <code>cook_minutes</code>, <code>difficulty</code> (<code>leicht</code>, <code>mittel</code>, <code>schwer</code>), <code>category</code>, <code>tags</code> (Textliste), <code>source_url</code>, <code>calories_per_serving</code> und <code>image_url</code>. Eine optionale <code>image_url</code> muss direkt auf ein Bild zeigen; sie wird beim Import heruntergeladen, nicht per KI verarbeitet.</p>
+      <h3>Beispiel: <code>tomatensuppe.json</code></h3><pre>{
+  "format": "rezeptify-recipe/v1",
+  "title": "Tomatensuppe",
+  "description": "Schnell und cremig.",
+  "servings": 4,
+  "prep_minutes": 10,
+  "cook_minutes": 20,
+  "difficulty": "leicht",
+  "category": "Suppe",
+  "tags": ["vegetarisch", "schnell"],
+  "ingredients": [
+    {"amount": 800, "unit": "g", "name": "Tomaten"},
+    {"amount": 1, "unit": "Stück", "name": "Zwiebel"}
+  ],
+  "steps": ["Zwiebel anbraten.", "Tomaten zugeben und 20 Minuten köcheln."],
+  "source_url": "https://example.com/tomatensuppe",
+  "image_url": "https://example.com/tomatensuppe.jpg"
+}</pre>
+      <p>Speichere die Datei als UTF-8-JSON und lade sie im Tab „Datei“ hoch. Fehler nennen Feld und Ursache, damit die Datei direkt korrigiert werden kann.</p></div>
     </section>
 
     <!-- ── BOT view ───────────────────────────────────────────────────── -->

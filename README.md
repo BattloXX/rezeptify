@@ -12,6 +12,7 @@
 |---------|-------------|
 | 📱 **PWA** | Installierbar auf iOS & Android, offline-fähig |
 | 🤖 **KI-Import** | URL, Screenshot, Kamerafoto oder PDF → Rezept automatisch extrahiert (Claude Haiku 4.5) |
+| 📄 **JSON-Import** | Rezeptdateien im offenen `rezeptify-recipe/v1`-Format → deterministisch, ohne KI importieren |
 | 📐 **Metrische Einheiten** | KI konvertiert cups/oz/°F automatisch → ml/g/°C |
 | 🔍 **KI-Suchbot** | Freitext-Suche via Web Search — findet & extrahiert komplette Rezepte |
 | 📖 **Rezeptbuch** | Rezepte auswählen, sortieren, als mehrseitiges PDF exportieren |
@@ -161,13 +162,35 @@ PUT    /api/bilder/{id}/haupt          Als Hauptbild setzen
 POST   /api/rezepte/{id}/fetch-bild    Internet-Bild automatisch suchen
 
 POST   /api/analysiere-url             URL via Claude analysieren
-POST   /api/analysiere-bild            Screenshot/Foto/PDF via Claude
+POST   /api/analysiere-bild            Screenshot/Foto/PDF via Claude; Rezept-JSON deterministisch
 POST   /api/rezept-suche               Rezepte im Internet suchen (Suchbot)
 
 GET    /api/kategorien                 Kategorieliste
 GET    /api/tags                       Alle verwendeten Tags
 GET    /api/stats                      Statistiken
 ```
+
+## Strukturierte Rezeptdateien (JSON)
+
+Neben PDF und Bildern akzeptiert der Datei-Import UTF-8-kodierte `.json`-Dateien.
+Diese werden lokal validiert und nie an Claude gesendet. Das vollständige Feld- und
+Beispieldokument ist in der App über **Import → Rezept-JSON-Format ansehen** erreichbar.
+
+```json
+{
+  "format": "rezeptify-recipe/v1",
+  "title": "Tomatensuppe",
+  "ingredients": [{"amount": 800, "unit": "g", "name": "Tomaten"}],
+  "steps": ["Tomaten kochen.", "Pürieren."],
+  "servings": 4,
+  "tags": ["vegetarisch"]
+}
+```
+
+Required fields are `format`, `title`, and a non-empty `steps` list. Optional
+fields include `description`, `prep_minutes`, `cook_minutes`, `difficulty`,
+`category`, `source_url`, `calories_per_serving`, and an `image_url` pointing
+directly at an image to download without AI.
 
 ## Konfiguration (`config.py`)
 

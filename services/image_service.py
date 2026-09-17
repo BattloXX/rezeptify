@@ -15,15 +15,30 @@ IMG_MAX_BYTE = MAX_UPLOAD_MB * 1024 * 1024
 
 
 def resize_and_save(data: bytes, ext: str) -> str:
+    """Decode, orient and re-encode an image as JPEG.
+
+    This deliberately does not have a raw-byte fallback: accepting a file just
+    because its filename ends in ``.jpg`` made corrupt/non-image uploads look
+    successful and, for rotated photos, hid errors in the EXIF code.
+    """
     try:
         from PIL import Image, ExifTags
+        # Pillow itself does not register HEIC/HEIF decoders.  The optional
+        # mobile-camera format is listed in ALLOWED_IMAGES, so register it
+        # before opening rather than silently storing an unusable .heic file.
+        if ext == ".heic":
+            from pillow_heif import register_heif_opener
+            register_heif_opener()
+        img = Image.open(io.BytesIO(data))
+        img.verify()  # reject a renamed or truncated non-image before saving it
         img = Image.open(io.BytesIO(data))
         try:
             exif = img._getexif()
             if exif:
                 for tag, val in exif.items():
                     if ExifTags.TAGS.get(tag) == 'Orientation':
-                        for deg in {3: 180, 6: 270, 8: 90}.get(val, []):
+                        deg = {3: 180, 6: 270, 8: 90}.get(val)
+                        if deg:
                             img = img.rotate(deg, expand=True)
                         break
         except Exception:
@@ -42,14 +57,9 @@ def resize_and_save(data: bytes, ext: str) -> str:
         fname = f"{uuid.uuid4().hex}.jpg"
         img.save(UPLOAD_DIR / fname, 'JPEG', quality=IMG_QUALITY, optimize=True)
         return fname
-    except ImportError:
-        fname = f"{uuid.uuid4().hex}{ext}"
-        (UPLOAD_DIR / fname).write_bytes(data)
-        return fname
     except Exception:
-        fname = f"{uuid.uuid4().hex}{ext}"
-        (UPLOAD_DIR / fname).write_bytes(data)
-        return fname
+        from fastapi import HTTPException
+        raise HTTPException(400, "Datei ist kein lesbares Bild oder das Bildformat wird nicht unterstützt")
 
 
 def validate_and_save(data: bytes, ext: str) -> str:
@@ -59,6 +69,10 @@ def validate_and_save(data: bytes, ext: str) -> str:
     if len(data) > IMG_MAX_BYTE:
         from fastapi import HTTPException
         raise HTTPException(413, f"Datei zu groß (max {MAX_UPLOAD_MB} MB)")
+    if not data:
+        from fastapi import HTTPException
+        raise HTTPException(400, "Leere Datei kann nicht als Bild hochgeladen werden")
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     return resize_and_save(data, ext)
 
 

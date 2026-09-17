@@ -192,7 +192,7 @@ async function saveForm() {
       const fd = new FormData();
       fd.append('file', f);
       fd.append('ist_haupt', (r.bilder.length === 0).toString());
-      await apiFetch('/api/rezepte/'+r.id+'/bilder', { method:'POST', body: fd }).catch(()=>{});
+      await apiFetch('/api/rezepte/'+r.id+'/bilder', { method:'POST', body: fd });
     }
     toast(S.editId ? 'Gespeichert ✓' : 'Rezept erstellt ✓', 'ok');
     const savedId = r.id;
