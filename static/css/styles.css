@@ -497,6 +497,7 @@ a { color: inherit; text-decoration: none; }
 }
 .url-inp:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(232,130,58,0.12); }
 .url-inp::placeholder { color: var(--muted); }
+.url-list { height: auto; min-height: 104px; padding: 14px 16px; resize: vertical; line-height: 1.45; }
 
 .dropzone {
   border: 2px dashed var(--border); border-radius: var(--r-xl);
@@ -552,6 +553,19 @@ a { color: inherit; text-decoration: none; }
 .spinner { width: 40px; height: 40px; border: 3px solid var(--n-150); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 1rem; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-box p { font-size: 0.88rem; color: var(--muted); font-weight: 500; }
+
+.batch-results { display: none; margin-top: 1rem; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r-xl); overflow: hidden; }
+.batch-results.on { display: block; }
+.batch-results-hdr { padding: 11px 16px; background: var(--n-50); border-bottom: 1px solid var(--border); font-family: var(--serif); font-size: .86rem; font-weight: 700; }
+.batch-result { display: flex; align-items: flex-start; gap: 9px; padding: 10px 14px; border-bottom: 1px solid var(--n-100); font-size: .82rem; }
+.batch-result:last-child { border-bottom: 0; }
+.batch-result-icon { flex: 0 0 18px; color: var(--muted); font-weight: 800; text-align: center; }
+.batch-result.analyzing .batch-result-icon { color: var(--accent); }
+.batch-result.saved .batch-result-icon { color: #065f46; }
+.batch-result.error .batch-result-icon { color: #991b1b; }
+.batch-result-text { min-width: 0; overflow-wrap: anywhere; }
+.batch-result-status { display: block; margin-top: 2px; color: var(--muted); font-size: .76rem; }
+.batch-result.error .batch-result-status { color: #991b1b; }
 
 .preview-card { display: none; background: var(--surface); border: 2px solid var(--accent); border-radius: var(--r-xl); overflow: hidden; margin-top: 1rem; animation: fadeUp 0.2s var(--ease); box-shadow: 0 8px 32px rgba(232,130,58,0.12); }
 .preview-card.on { display: block; }

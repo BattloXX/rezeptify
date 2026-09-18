@@ -152,8 +152,8 @@
 
       <!-- URL panel -->
       <div class="tab-panel on" id="panel-url">
-        <input id="import-url" type="url" class="url-inp" placeholder="https://example.com/rezept/…"
-          autocomplete="off">
+        <textarea id="import-url" class="url-inp url-list" rows="4" placeholder="https://example.com/rezept/…&#10;https://example.com/noch-ein-rezept/…"
+          autocomplete="off" aria-label="Rezept-URLs, eine pro Zeile"></textarea>
         <button id="btn-url" class="btn btn-accent btn-full" onclick="doUrlAnalyse()">
           <span class="material-symbols-outlined">auto_awesome</span> Mit KI analysieren
         </button>
@@ -172,7 +172,7 @@
           <p class="dropzone-title">Bild, PDF oder Rezeptdatei hier ablegen</p>
           <p class="dropzone-sub">oder klicken zum Auswählen · JPG, PNG, WebP, PDF, JSON</p>
         </div>
-        <input id="file-inp" type="file" accept="image/*,.pdf,application/json,.json" style="display:none"
+        <input id="file-inp" type="file" accept="image/*,.pdf,application/json,.json" multiple style="display:none"
           onchange="fileSelected(event)">
         <div id="dz-preview" class="dropzone-preview">
           <img id="dz-img" alt="" style="display:none">
@@ -191,6 +191,8 @@
         <div class="spinner"></div>
         <p>KI analysiert Rezept…</p>
       </div>
+
+      <div id="batch-results" class="batch-results" aria-live="polite"></div>
 
       <div id="preview-card" class="preview-card">
         <div class="preview-hdr">
