@@ -27,6 +27,34 @@ def test_health_is_public_and_has_no_sensitive_fields(client):
     assert system.public_router.dependencies == []
 
 
+def test_public_update_log_is_read_only_and_redacts_secrets(client, monkeypatch):
+    import config
+    from db import get_db
+
+    monkeypatch.setattr(config, "AUTH_PASSWORD", "test-secret")
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "api-secret")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""INSERT INTO system_updates
+                (status, von_version, ziel_version, log, fehler, beendet_am)
+                VALUES ('fehlgeschlagen', '2.3.1', '2.3.2', %s, %s, NOW())""", (
+                "Update gestartet\nAUTH_PASSWORD=test-secret\ntoken: api-secret\n"
+                "https://user:api-secret@example.test/repo",
+                "password=test-secret",
+            ))
+
+    response = client.get("/api/system/update-log")
+    assert response.status_code == 200
+    update = response.json()["updates"][0]
+    assert set(update) == {"status", "von_version", "ziel_version", "gestartet_am", "beendet_am", "fehler", "log"}
+    assert update["status"] == "fehlgeschlagen"
+    assert update["von_version"] == "2.3.1"
+    assert update["ziel_version"] == "2.3.2"
+    assert "test-secret" not in update["log"] + update["fehler"]
+    assert "api-secret" not in update["log"] + update["fehler"]
+    assert "[REDACTED]" in update["log"]
+
+
 def test_update_requires_password_confirmation(client, monkeypatch):
     import config
     monkeypatch.setattr(config, "AUTH_PASSWORD", "test-secret")

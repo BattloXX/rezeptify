@@ -1,5 +1,6 @@
 """Authenticated system administration endpoints and the public health probe."""
 import logging
+import re
 import secrets
 from typing import Optional
 
@@ -15,6 +16,10 @@ logger = logging.getLogger(__name__)
 public_router = APIRouter()
 router = APIRouter(dependencies=[Depends(require_auth)])
 _RELEASE_URL = "https://api.github.com/repos/BattloXX/rezeptify/releases/latest"
+_SENSITIVE_VALUE = re.compile(
+    r"(?i)\b(auth[_-]?password|password|passwd|secret|token|api[_-]?key)\b(\s*[:=]\s*)([^\s,;]+)"
+)
+_URL_CREDENTIALS = re.compile(r"://([^:/\s]+):([^@\s]+)@")
 
 
 def _app_version() -> str:
@@ -60,6 +65,26 @@ def _serialize(row: dict) -> dict:
     return row
 
 
+def _redact_secrets(value: object) -> object:
+    """Keep public update diagnostics useful without exposing credentials."""
+    if not isinstance(value, str):
+        return value
+    for name in ("AUTH_PASSWORD", "ANTHROPIC_API_KEY", "DB_PASSWORD"):
+        secret = getattr(config, name, "")
+        if isinstance(secret, str) and secret:
+            value = value.replace(secret, "[REDACTED]")
+    value = _URL_CREDENTIALS.sub(r"://\1:[REDACTED]@", value)
+    return _SENSITIVE_VALUE.sub(r"\1\2[REDACTED]", value)
+
+
+def _public_update(row: dict) -> dict:
+    row = _serialize(row)
+    return {
+        key: _redact_secrets(row.get(key)) if key in {"log", "fehler"} else row.get(key)
+        for key in ("status", "von_version", "ziel_version", "gestartet_am", "beendet_am", "fehler", "log")
+    }
+
+
 @public_router.get("/api/health")
 def health():
     database = "ok"
@@ -72,6 +97,16 @@ def health():
         database = "error"
     return {"status": "ok", "version": _app_version(), "database": database,
             "schema_version": SCHEMA_VERSION}
+
+
+@public_router.get("/api/system/update-log")
+def public_update_log():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT status, von_version, ziel_version, gestartet_am,
+                beendet_am, fehler, log FROM system_updates ORDER BY id DESC LIMIT 20""")
+            rows = cur.fetchall()
+    return {"updates": [_public_update(row) for row in rows]}
 
 
 @router.get("/api/system/update-check")

@@ -10,6 +10,7 @@ import { initKochmodus } from './views/kochmodus.js';
 import { initEinkauf, loadEinkauf } from './views/einkauf.js';
 import { initWochenplan, loadWochenplan } from './views/wochenplan.js';
 import { initSystem, loadSystem } from './views/system.js';
+import { initUpdateLog, loadUpdateLog } from './views/update-log.js';
 
 // ── Global state (accessed by all views) ─────────────────────────────────────
 export const S = {
@@ -20,6 +21,12 @@ export const S = {
   formTags: [], formNewImgs: [], formImgUrls: [],
   debT: null,
 };
+
+function registerServiceWorker() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+  }
+}
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 export function showView(name) {
@@ -32,6 +39,7 @@ export function showView(name) {
   if (name === 'einkauf') loadEinkauf();
   if (name === 'wochenplan') loadWochenplan();
   if (name === 'system') loadSystem();
+  if (name === 'update-log') loadUpdateLog();
 }
 window.showView = showView;
 
@@ -73,9 +81,7 @@ async function initApp() {
   await loadGrid();
   setupTagInp();
   setupClipboardPaste();
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
-  }
+  registerServiceWorker();
   handleDeepLink();
 }
 
@@ -145,7 +151,9 @@ window.addEventListener('appinstalled', () => {
 
 // ── Back/forward navigation ───────────────────────────────────────────────────
 window.addEventListener('popstate', () => {
-  if (window.location.pathname === '/') {
+  if (window.location.pathname === '/update-log') {
+    showView('update-log');
+  } else if (window.location.pathname === '/') {
     document.getElementById('ov-detail')?.classList.remove('on');
     document.body.style.overflow = '';
     S.current = null;
@@ -174,6 +182,14 @@ document.addEventListener('DOMContentLoaded', () => {
   initEinkauf();
   initWochenplan();
   initSystem();
+  initUpdateLog();
+
+  if (window.location.pathname === '/update-log') {
+    registerServiceWorker();
+    hideLogin();
+    showView('update-log');
+    return;
+  }
 
   if (!hasAuth()) {
     // Try a test request — if 401 or no auth configured, show login

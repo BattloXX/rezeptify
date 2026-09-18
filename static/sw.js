@@ -1,4 +1,4 @@
-const CACHE = 'rezeptify-v4';
+const CACHE = 'rezeptify-v5';
 const SHELL = [
   '/',
   '/static/manifest.json',
@@ -43,17 +43,15 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Static assets: cache first, network fallback with cache update
+  // Static assets: network first so deployed fixes are visible immediately;
+  // retain the cached response only as an offline fallback.
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(res => {
-        if (res.ok && e.request.method === 'GET') {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return res;
-      });
-    })
+    fetch(e.request).then(res => {
+      if (res.ok && e.request.method === 'GET') {
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+      }
+      return res;
+    }).catch(() => caches.match(e.request))
   );
 });
