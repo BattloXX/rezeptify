@@ -1,5 +1,5 @@
 import { api, apiFetch } from '../api.js';
-import { toast, x } from '../utils.js';
+import { askImageUrl, toast, x } from '../utils.js';
 import { S } from '../app.js';
 import { loadGrid, loadTags } from './home.js';
 import { closeOverlay } from './detail.js';
@@ -89,8 +89,8 @@ window.formImgPicked = formImgPicked;
 window.delFormNewImg = (i) => { S.formNewImgs.splice(i,1); renderFormImgs(); };
 window.delFormNewImgUrl = (i) => { S.formNewImgUrls.splice(i,1); renderFormImgs(); };
 async function addFormImgUrl() {
-  const url = prompt('Bild-URL eingeben');
-  if (!url?.trim()) return;
+  const url = await askImageUrl();
+  if (!url) return;
   try {
     const image = await api('/api/bilder/from-url', { method: 'POST', body: JSON.stringify({ url }) });
     S.formNewImgUrls.push(image);

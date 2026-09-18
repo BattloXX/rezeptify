@@ -13,6 +13,44 @@ export function toast(msg, type = '') {
   _toastTimer = setTimeout(() => el.classList.remove('on'), 3500);
 }
 
+// ── Image URL dialog ─────────────────────────────────────────────────────────
+let imageUrlResolver = null;
+
+function finishImageUrlModal(value = null) {
+  const overlay = document.getElementById('ov-image-url');
+  const input = document.getElementById('image-url-input');
+  overlay?.classList.remove('on');
+  if (input) input.value = '';
+  const resolve = imageUrlResolver;
+  imageUrlResolver = null;
+  resolve?.(value);
+}
+
+// Resolves to a trimmed URL on save, or null when the dialog is cancelled.
+export function askImageUrl() {
+  const overlay = document.getElementById('ov-image-url');
+  const input = document.getElementById('image-url-input');
+  if (!overlay || !input) return Promise.resolve(null);
+  if (imageUrlResolver) finishImageUrlModal();
+  overlay.classList.add('on');
+  input.value = '';
+  input.onkeydown = (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); window.submitImageUrlModal(); }
+    if (event.key === 'Escape') { event.preventDefault(); window.cancelImageUrlModal(); }
+  };
+  setTimeout(() => input.focus(), 0);
+  return new Promise(resolve => { imageUrlResolver = resolve; });
+}
+
+window.submitImageUrlModal = () => {
+  const value = document.getElementById('image-url-input')?.value.trim();
+  finishImageUrlModal(value || null);
+};
+window.cancelImageUrlModal = () => finishImageUrlModal();
+window.imageUrlModalOverlayClick = (event) => {
+  if (event.target === document.getElementById('ov-image-url')) finishImageUrlModal();
+};
+
 // Apply UI state before a small mutation request, and restore it on failure.
 export async function optimisticToggle({ apply, request, revert }) {
   apply();

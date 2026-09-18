@@ -1,5 +1,5 @@
 import { api, apiFetch } from '../api.js';
-import { toast, x, EM, optimisticToggle, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
+import { askImageUrl, toast, x, EM, optimisticToggle, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
 import { S } from '../app.js';
 import { loadGrid } from './home.js';
 import { openEditForm } from './form.js';
@@ -436,8 +436,8 @@ async function uploadThumb(e) {
 window.uploadThumb = uploadThumb;
 
 async function addThumbUrl() {
-  const url = prompt('Bild-URL eingeben');
-  if (!url?.trim()) return;
+  const url = await askImageUrl();
+  if (!url) return;
   try {
     const image = await api('/api/bilder/from-url', { method: 'POST', body: JSON.stringify({ url }) });
     await api('/api/rezepte/' + S.current.id + '/bilder/attach', {
