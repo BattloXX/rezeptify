@@ -1,5 +1,6 @@
 """The deliberately small, fixed-command update workflow."""
 import logging
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +27,20 @@ def _run_pip() -> None:
 
 
 def _run_systemctl_restart() -> None:
-    subprocess.run(["systemctl", "--user", "restart", "rezeptify"], check=True)
+    # Run the client in a transient scope so restarting rezeptify does not
+    # terminate this client along with the service's cgroup.
+    subprocess.run([
+        "systemd-run", "--user", "--scope", "--collect",
+        "systemctl", "--user", "restart", "rezeptify",
+    ], check=True)
+
+
+def _is_expected_restart_termination(exc: Exception) -> bool:
+    """Return whether systemd terminated the restart client during shutdown."""
+    return (
+        isinstance(exc, subprocess.CalledProcessError)
+        and exc.returncode == -signal.SIGTERM
+    )
 
 
 def _append_log(update_id: int, message: str) -> None:
@@ -90,4 +104,9 @@ def run_update(update_id: int) -> None:
         _append_log(update_id, "Neustart wird ausgelöst")
         _run_systemctl_restart()
     except Exception as exc:
+        if _is_expected_restart_termination(exc):
+            # The state above is intentionally left for the next successful
+            # process startup to mark as completed in app.lifespan.
+            logger.warning("Update %s: restart client terminated by SIGTERM", update_id)
+            return
         _fail(update_id, "Neustart", exc)

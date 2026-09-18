@@ -1,4 +1,7 @@
 """Security-sensitive tests for the browser update API."""
+import signal
+import subprocess
+
 import pytest
 
 
@@ -98,6 +101,27 @@ def test_run_update_records_mocked_step_failure(client, monkeypatch):
     assert row["status"] == "fehlgeschlagen"
     assert "git failure" in row["fehler"]
     assert "Repository" in row["log"]
+
+
+def test_run_update_keeps_restart_pending_after_sigterm(client, monkeypatch):
+    from services import update_service
+
+    update_id = _insert_update()
+    monkeypatch.setattr(update_service, "create_backup", lambda: "/private/backup")
+    monkeypatch.setattr(update_service, "_run_git", lambda args: None)
+    monkeypatch.setattr(update_service, "_run_pip", lambda: None)
+    monkeypatch.setattr(update_service, "init_db", lambda: None)
+    monkeypatch.setattr(
+        update_service,
+        "_run_systemctl_restart",
+        lambda: (_ for _ in ()).throw(subprocess.CalledProcessError(-signal.SIGTERM, "systemctl")),
+    )
+
+    update_service.run_update(update_id)
+
+    row = _row(update_id)
+    assert row["status"] == "neustart_ausgeloest"
+    assert row["fehler"] is None
 
 
 @pytest.mark.parametrize(("current", "candidate", "expected"), [
