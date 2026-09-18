@@ -19,7 +19,7 @@ export const S = {
   kategorien: [], tags: [],
   current: null, editId: null,
   importData: null, importFile: null,
-  formTags: [], formNewImgs: [], formImgUrls: [],
+  formTags: [], formNewImgs: [], formImgUrls: [], formNewImgUrls: [],
   debT: null,
 };
 

@@ -1,11 +1,27 @@
 from pathlib import Path
+from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from db import get_db
-from services.image_service import validate_and_save, search_recipe_image
+from services.image_service import validate_and_save, download_image, search_recipe_image
 from config import UPLOAD_DIR
 from auth import require_auth
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+
+
+@router.post("/api/bilder/from-url")
+def download_bild_from_url(body: dict):
+    url = body.get("url", "")
+    if not isinstance(url, str):
+        raise HTTPException(400, "Ungültige Bild-URL")
+    url = url.strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(400, "Ungültige Bild-URL")
+    fname = download_image(url, url)
+    if not fname:
+        raise HTTPException(422, "Bild konnte nicht von dieser URL geladen werden")
+    return {"dateiname": fname, "url": f"/static/uploads/{fname}"}
 
 
 @router.post("/api/rezepte/{rid}/bilder")

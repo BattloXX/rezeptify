@@ -6,7 +6,7 @@ import { closeOverlay } from './detail.js';
 
 // ── Open form ─────────────────────────────────────────────────────────────────
 export function openNewForm(prefill = null) {
-  S.editId = null; S.formTags = []; S.formNewImgs = [];
+  S.editId = null; S.formTags = []; S.formNewImgs = []; S.formNewImgUrls = [];
   document.getElementById('form-title').textContent = 'Neues Rezept';
   resetForm();
   if (prefill) fillForm(prefill);
@@ -22,6 +22,7 @@ export async function openEditForm(id) {
     S.current = snap;
     S.formTags = [...(snap.tags||[])];
     S.formNewImgs = [];
+    S.formNewImgUrls = [];
     closeOverlay('ov-detail');
     S.current = snap;
     document.getElementById('form-title').textContent = 'Rezept bearbeiten';
@@ -75,6 +76,10 @@ export function renderFormImgs() {
     S.formImgUrls.map((url, i) =>
       `<div class="img-thumb"><img src="${url}" alt="">
        <button class="img-thumb-del" onclick="delFormNewImg(${i})">×</button></div>`
+    ).join('') +
+    S.formNewImgUrls.map((image, i) =>
+      `<div class="img-thumb"><img src="${x(image.url)}" alt="">
+       <button class="img-thumb-del" onclick="delFormNewImgUrl(${i})">×</button></div>`
     ).join('');
 }
 window.renderFormImgs = renderFormImgs;
@@ -82,6 +87,18 @@ window.renderFormImgs = renderFormImgs;
 function formImgPicked(e) { S.formNewImgs.push(...Array.from(e.target.files)); renderFormImgs(); e.target.value = ''; }
 window.formImgPicked = formImgPicked;
 window.delFormNewImg = (i) => { S.formNewImgs.splice(i,1); renderFormImgs(); };
+window.delFormNewImgUrl = (i) => { S.formNewImgUrls.splice(i,1); renderFormImgs(); };
+async function addFormImgUrl() {
+  const url = prompt('Bild-URL eingeben');
+  if (!url?.trim()) return;
+  try {
+    const image = await api('/api/bilder/from-url', { method: 'POST', body: JSON.stringify({ url }) });
+    S.formNewImgUrls.push(image);
+    renderFormImgs();
+    toast('Bild hinzugefügt ✓', 'ok');
+  } catch (err) { toast(err.message, 'err'); }
+}
+window.addFormImgUrl = addFormImgUrl;
 window.delFormExistImg = async (id) => {
   await api('/api/bilder/'+id, {method:'DELETE'}).catch(()=>{});
   if (S.current) S.current.bilder = S.current.bilder.filter(b => b.id !== id);
@@ -188,11 +205,20 @@ async function saveForm() {
     let r = S.editId
       ? await api('/api/rezepte/'+S.editId, { method:'PUT',  body: JSON.stringify(payload) })
       : await api('/api/rezepte',           { method:'POST', body: JSON.stringify(payload) });
+    let hasImage = (r.bilder || []).length > 0;
     for (const f of S.formNewImgs) {
       const fd = new FormData();
       fd.append('file', f);
-      fd.append('ist_haupt', (r.bilder.length === 0).toString());
+      fd.append('ist_haupt', (!hasImage).toString());
       await apiFetch('/api/rezepte/'+r.id+'/bilder', { method:'POST', body: fd });
+      hasImage = true;
+    }
+    for (const image of S.formNewImgUrls) {
+      await api('/api/rezepte/'+r.id+'/bilder/attach', {
+        method: 'POST',
+        body: JSON.stringify({ dateiname: image.dateiname, ist_haupt: !hasImage })
+      });
+      hasImage = true;
     }
     toast(S.editId ? 'Gespeichert ✓' : 'Rezept erstellt ✓', 'ok');
     const savedId = r.id;

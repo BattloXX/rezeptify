@@ -377,9 +377,8 @@ window.exportPDF = exportPDF;
 // ── Thumbnail strip ───────────────────────────────────────────────────────────
 function renderThumbs(r) {
   const wrap = document.getElementById('thumb-strip-wrap');
-  if (!r.bilder?.length) { wrap.innerHTML = ''; return; }
   wrap.innerHTML = `<div class="thumb-strip">
-    ${r.bilder.map(b =>
+    ${(r.bilder || []).map(b =>
       `<div class="thumb-item ${b.ist_haupt ? 'on' : ''}" onclick="switchThumb('${x(b.url)}',${b.id},this)">
         <img src="${x(b.url)}" alt="" loading="lazy">
         <button class="thumb-del" onclick="delThumb(event,${b.id})">×</button>
@@ -392,6 +391,9 @@ function renderThumbs(r) {
       <input type="file" accept="image/*" capture="environment" onchange="uploadThumb(event)" style="display:none">
       <span class="material-symbols-outlined">photo_camera</span>
     </div>
+    <button class="thumb-add" type="button" title="Bild-URL hinzufügen" onclick="addThumbUrl()">
+      <span class="material-symbols-outlined">add_link</span>
+    </button>
   </div>`;
 }
 
@@ -433,6 +435,22 @@ async function uploadThumb(e) {
 }
 window.uploadThumb = uploadThumb;
 
+async function addThumbUrl() {
+  const url = prompt('Bild-URL eingeben');
+  if (!url?.trim()) return;
+  try {
+    const image = await api('/api/bilder/from-url', { method: 'POST', body: JSON.stringify({ url }) });
+    await api('/api/rezepte/' + S.current.id + '/bilder/attach', {
+      method: 'POST',
+      body: JSON.stringify({ dateiname: image.dateiname, ist_haupt: !S.current.bilder?.length })
+    });
+    S.current = await api('/api/rezepte/' + S.current.id);
+    renderDetail(S.current);
+    toast('Bild hinzugefügt ✓', 'ok');
+  } catch (err) { toast(err.message, 'err'); }
+}
+window.addThumbUrl = addThumbUrl;
+
 // ── Delete / edit ─────────────────────────────────────────────────────────────
 async function deleteCurrent() {
   if (!S.current || !confirm(`"${S.current.titel}" löschen?`)) return;
@@ -460,6 +478,7 @@ export function closeOverlay(id) {
   if (id === 'ov-form') {
     S.editId = null;
     S.formNewImgs = [];
+    S.formNewImgUrls = [];
     S.formImgUrls.forEach(u => URL.revokeObjectURL(u));
     S.formImgUrls = [];
     S.current = null;
