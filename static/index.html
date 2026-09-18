@@ -457,15 +457,6 @@
   </div>
 </div>
 
-<!-- ── Image URL entry ──────────────────────────────────────────────── -->
-<div id="ov-image-url" class="overlay" onclick="imageUrlModalOverlayClick(event)">
-  <div class="modal system-modal image-url-modal" role="dialog" aria-modal="true" aria-labelledby="image-url-modal-title">
-    <div class="form-header"><span id="image-url-modal-title" class="form-header-title">Bild-URL eingeben</span><button class="form-header-close" onclick="cancelImageUrlModal()" aria-label="Schließen">×</button></div>
-    <div class="system-modal-body"><p>Füge einen direkten Link zu einem Bild ein.</p><input id="image-url-input" type="url" class="fc" inputmode="url" autocomplete="url" placeholder="https://example.com/bild.jpg"></div>
-    <div class="form-footer"><button class="btn btn-ghost" type="button" onclick="cancelImageUrlModal()">Abbrechen</button><button class="btn btn-accent" type="button" onclick="submitImageUrlModal()">Speichern</button></div>
-  </div>
-</div>
-
 <div id="ov-planen" class="overlay" onclick="overlayClick(event,'ov-planen')">
   <div class="modal plan-modal"><div class="form-header"><span class="form-header-title">Für diese Woche planen</span><button class="form-header-close" onclick="closeOverlay('ov-planen')">×</button></div><div class="plan-modal-body"><strong id="plan-recipe-title"></strong><label>Tag<select id="plan-date" class="fc"></select></label><label>Mahlzeit<select id="plan-meal" class="fc"><option value="fruehstueck">Frühstück</option><option value="mittag">Mittagessen</option><option value="abend" selected>Abendessen</option><option value="snack">Snack</option></select></label></div><div class="form-footer"><button class="btn btn-ghost" onclick="closeOverlay('ov-planen')">Abbrechen</button><button class="btn btn-accent" onclick="confirmPlan()">Planen</button></div></div>
 </div>
@@ -603,6 +594,15 @@
       <button class="btn btn-ghost" onclick="closeOverlay('ov-form')">Abbrechen</button>
       <button class="btn btn-accent" onclick="saveForm()">Speichern</button>
     </div>
+  </div>
+</div>
+
+<!-- ── Image URL entry ──────────────────────────────────────────────── -->
+<div id="ov-image-url" class="overlay" onclick="imageUrlModalOverlayClick(event)">
+  <div class="modal system-modal image-url-modal" role="dialog" aria-modal="true" aria-labelledby="image-url-modal-title">
+    <div class="form-header"><span id="image-url-modal-title" class="form-header-title">Bild-URL eingeben</span><button class="form-header-close" onclick="cancelImageUrlModal()" aria-label="Schließen">×</button></div>
+    <div class="system-modal-body"><p>Füge einen direkten Link zu einem Bild ein.</p><input id="image-url-input" type="url" class="fc" inputmode="url" autocomplete="url" placeholder="https://example.com/bild.jpg"></div>
+    <div class="form-footer"><button class="btn btn-ghost" type="button" onclick="cancelImageUrlModal()">Abbrechen</button><button class="btn btn-accent" type="button" onclick="submitImageUrlModal()">Speichern</button></div>
   </div>
 </div>
 
