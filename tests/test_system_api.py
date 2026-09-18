@@ -124,6 +124,53 @@ def test_run_update_keeps_restart_pending_after_sigterm(client, monkeypatch):
     assert row["fehler"] is None
 
 
+def test_analysiere_bild_returns_clean_error_when_claude_fails(client, monkeypatch, tmp_path):
+    from routes import ai
+
+    monkeypatch.setattr(ai, "UPLOAD_DIR", tmp_path)
+    monkeypatch.setattr(
+        ai, "get_claude",
+        lambda: (_ for _ in ()).throw(RuntimeError("upstream secret failure")),
+    )
+
+    response = client.post(
+        "/api/analysiere-bild",
+        files={"file": ("rezept.jpg", b"not-a-real-image", "image/jpeg")},
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "Rezeptanalyse ist derzeit nicht verfügbar, bitte erneut versuchen"
+    }
+
+
+def test_global_error_handler_persists_redacted_public_error_log(client, monkeypatch):
+    from routes import system
+
+    def fail_version():
+        raise RuntimeError(
+            "AUTH_PASSWORD=test-secret ANTHROPIC_API_KEY=test-key "
+            "DB_PASSWORD=rezeptify https://user:password@example.test"
+        )
+
+    monkeypatch.setattr(system, "_app_version", fail_version)
+    response = client.get("/api/health")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Serverfehler, bitte erneut versuchen"}
+
+    response = client.get("/api/system/error-log")
+    assert response.status_code == 200
+    error = response.json()["errors"][0]
+    assert error["methode"] == "GET"
+    assert error["pfad"] == "/api/health"
+    assert error["exception_typ"] == "RuntimeError"
+    assert "test-secret" not in error["nachricht"]
+    assert "test-key" not in error["nachricht"]
+    assert "rezeptify" not in error["nachricht"]
+    assert "password@example.test" not in error["nachricht"]
+    assert "[REDACTED]" in error["nachricht"]
+
+
 @pytest.mark.parametrize(("current", "candidate", "expected"), [
     ("2.1.0", "2.2.0", True), ("2.1.0", "2.1.0", False),
     ("2.1.0", "v2.1.1", True), ("2.1.0", "not-a-version", False),

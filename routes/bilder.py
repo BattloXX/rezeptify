@@ -10,19 +10,24 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 
 @router.post("/api/rezepte/{rid}/bilder")
 def upload_bild(rid: int, file: UploadFile = File(...), ist_haupt: bool = Form(False)):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            if not cur.execute("SELECT 1 FROM rezepte WHERE id=%s", (rid,)):
-                raise HTTPException(404, "Rezept nicht gefunden")
-    ext = Path(file.filename or "").suffix.lower()
-    fname = validate_and_save(file.file.read(), ext)
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            if ist_haupt:
-                cur.execute("UPDATE bilder SET ist_haupt=0 WHERE rezept_id=%s", (rid,))
-            cur.execute("INSERT INTO bilder (rezept_id,dateiname,ist_haupt) VALUES (%s,%s,%s)",
-                        (rid, fname, 1 if ist_haupt else 0))
-    return {"dateiname": fname, "url": f"/static/uploads/{fname}", "ist_haupt": ist_haupt}
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                if not cur.execute("SELECT 1 FROM rezepte WHERE id=%s", (rid,)):
+                    raise HTTPException(404, "Rezept nicht gefunden")
+        ext = Path(file.filename or "").suffix.lower()
+        fname = validate_and_save(file.file.read(), ext)
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                if ist_haupt:
+                    cur.execute("UPDATE bilder SET ist_haupt=0 WHERE rezept_id=%s", (rid,))
+                cur.execute("INSERT INTO bilder (rezept_id,dateiname,ist_haupt) VALUES (%s,%s,%s)",
+                            (rid, fname, 1 if ist_haupt else 0))
+        return {"dateiname": fname, "url": f"/static/uploads/{fname}", "ist_haupt": ist_haupt}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(500, "Bild konnte nicht gespeichert werden, bitte erneut versuchen")
 
 
 @router.post("/api/rezepte/{rid}/bilder/attach")

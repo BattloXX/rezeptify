@@ -85,6 +85,14 @@ def _public_update(row: dict) -> dict:
     }
 
 
+def _public_error(row: dict) -> dict:
+    row = _serialize(row)
+    return {
+        key: _redact_secrets(row.get(key)) if key in {"pfad", "nachricht"} else row.get(key)
+        for key in ("erstellt_am", "methode", "pfad", "exception_typ", "nachricht")
+    }
+
+
 @public_router.get("/api/health")
 def health():
     database = "ok"
@@ -107,6 +115,16 @@ def public_update_log():
                 beendet_am, fehler, log FROM system_updates ORDER BY id DESC LIMIT 20""")
             rows = cur.fetchall()
     return {"updates": [_public_update(row) for row in rows]}
+
+
+@public_router.get("/api/system/error-log")
+def public_error_log():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT erstellt_am, methode, pfad, exception_typ, nachricht
+                FROM error_log ORDER BY id DESC LIMIT 20""")
+            rows = cur.fetchall()
+    return {"errors": [_public_error(row) for row in rows]}
 
 
 @router.get("/api/system/update-check")

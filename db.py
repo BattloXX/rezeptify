@@ -7,7 +7,7 @@ import pymysql.cursors
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_CHARSET
 
 # Informative Version für den Health-Endpoint; init_db() bleibt bewusst idempotent.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @contextmanager
@@ -194,6 +194,17 @@ def init_db():
                     fehler        TEXT NULL,
                     beendet_am    TIMESTAMP NULL,
                     INDEX idx_system_updates_status (status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS error_log (
+                    id              INT AUTO_INCREMENT PRIMARY KEY,
+                    erstellt_am     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    methode         VARCHAR(10) NOT NULL,
+                    pfad            VARCHAR(500) NOT NULL,
+                    exception_typ   VARCHAR(255) NOT NULL,
+                    nachricht       TEXT NULL,
+                    INDEX idx_error_log_erstellt_am (erstellt_am)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
             for k in ["Frühstück","Vorspeise","Hauptgericht","Dessert","Snack",

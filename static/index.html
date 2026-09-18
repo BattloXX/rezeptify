@@ -37,6 +37,7 @@
     <p id="login-err" class="login-err"></p>
     <button id="login-btn" class="btn btn-accent btn-full" onclick="doLogin()">Anmelden</button>
     <a class="update-log-link" href="/update-log">Öffentlichen Update-Verlauf ansehen</a>
+    <a class="update-log-link" href="/error-log">Öffentliches Fehlerprotokoll ansehen</a>
   </div>
 </div>
 
@@ -308,6 +309,13 @@
       <div class="system-header"><h2>Update-Verlauf</h2><p>Öffentliche, schreibgeschützte Diagnoseinformationen.</p></div>
       <div id="update-log-status" class="system-result" aria-live="polite"></div>
       <div id="update-log-list" class="update-log-list"></div>
+    </section>
+
+    <!-- ── PUBLIC ERROR LOG view ─────────────────────────────────────── -->
+    <section id="view-error-log" class="view">
+      <div class="system-header"><h2>Fehlerprotokoll</h2><p>Öffentliche, bereinigte Serverfehler der letzten 20 Anfragen.</p></div>
+      <div id="error-log-status" class="system-result" aria-live="polite"></div>
+      <div id="error-log-list" class="update-log-list"></div>
     </section>
 
     <!-- ── BUCH view ──────────────────────────────────────────────────── -->

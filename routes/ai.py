@@ -77,85 +77,86 @@ def analysiere_url(body: dict):
 
 @router.post("/api/analysiere-bild")
 async def analysiere_bild(file: UploadFile = File(...)):
-    ext = Path(file.filename or "").suffix.lower()
-    data = await file.read()
-    if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(413, f"Datei zu groß (max {MAX_UPLOAD_MB} MB)")
-
-    # JSON recipe files never touch Claude. They intentionally use the same
-    # upload endpoint as PDFs/images so the UI has one import flow.
-    if ext == ".json":
-        recipe, image_url = parse_structured_recipe(data)
-        image_name = None
-        if image_url:
-            image_name = download_image(image_url, image_url)
-            if not image_name:
-                raise HTTPException(422, "image_url konnte nicht als Bild geladen werden")
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        orig_fname = f"src_{uuid.uuid4().hex}.json"
-        (UPLOAD_DIR / orig_fname).write_bytes(data)
-        result = recipe.model_dump()
-        result.update({"quelldatei": orig_fname, "structured_import": True})
-        if image_name:
-            result["downloaded_image"] = image_name
-        return result
-
-    check_api_key()
-
-    media_map = {".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".png":"image/png",
-                 ".webp":"image/webp", ".gif":"image/gif", ".heic":"image/jpeg"}
-    if ext != ".pdf" and ext not in media_map:
-        raise HTTPException(400, f"Format nicht unterstützt: {ext} (JPG, PNG, WebP, PDF, JSON)")
-
-    # Originaldatei dauerhaft speichern
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    orig_fname = f"src_{uuid.uuid4().hex}{ext}"
-    (UPLOAD_DIR / orig_fname).write_bytes(data)
-
-    claude = get_claude()
-
-    if ext == ".pdf":
-        b64 = base64.standard_b64encode(data).decode()
-        msg = claude.messages.create(
-            model=CLAUDE_MODEL, max_tokens=2000,
-            messages=[{"role": "user", "content": [
-                {"type": "document", "source": {"type": "base64",
-                 "media_type": "application/pdf", "data": b64}},
-                {"type": "text", "text": PROMPT_IMAGE, "cache_control": {"type": "ephemeral"}},
-            ]}]
-        )
-    else:
-        b64 = base64.standard_b64encode(data).decode()
-        msg = claude.messages.create(
-            model=CLAUDE_MODEL, max_tokens=2000,
-            messages=[{"role": "user", "content": [
-                {"type": "image", "source": {"type": "base64",
-                 "media_type": media_map[ext], "data": b64}},
-                {"type": "text", "text": PROMPT_IMAGE, "cache_control": {"type": "ephemeral"}},
-            ]}]
-        )
-
     try:
-        result = parse_claude(msg.content[0].text)
-    except Exception as e:
-        raise HTTPException(500, f"Claude-Antwort konnte nicht geparst werden: {e}")
-    if result.get("fehler"):
-        raise HTTPException(422, result["fehler"])
+        ext = Path(file.filename or "").suffix.lower()
+        data = await file.read()
+        if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
+            raise HTTPException(413, f"Datei zu groß (max {MAX_UPLOAD_MB} MB)")
 
-    result["quelle_typ"] = "pdf-import" if ext == ".pdf" else "bild-import"
-    result["quelldatei"] = orig_fname
+        # JSON recipe files never touch Claude. They intentionally use the same
+        # upload endpoint as PDFs/images so the UI has one import flow.
+        if ext == ".json":
+            recipe, image_url = parse_structured_recipe(data)
+            image_name = None
+            if image_url:
+                image_name = download_image(image_url, image_url)
+                if not image_name:
+                    raise HTTPException(422, "image_url konnte nicht als Bild geladen werden")
+            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+            orig_fname = f"src_{uuid.uuid4().hex}.json"
+            (UPLOAD_DIR / orig_fname).write_bytes(data)
+            result = recipe.model_dump()
+            result.update({"quelldatei": orig_fname, "structured_import": True})
+            if image_name:
+                result["downloaded_image"] = image_name
+            return result
 
-    if ext != ".pdf":
-        import_fname = resize_and_save(data, ext)
-        internet_fname = search_recipe_image(result.get("titel", ""))
-        if internet_fname:
-            result["downloaded_image"] = internet_fname
-            result["import_image"] = import_fname
-        else:
-            result["downloaded_image"] = import_fname
-            result["import_image"] = None
+        check_api_key()
 
-    return result
+        media_map = {".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".png":"image/png",
+                     ".webp":"image/webp", ".gif":"image/gif", ".heic":"image/jpeg"}
+        if ext != ".pdf" and ext not in media_map:
+            raise HTTPException(400, f"Format nicht unterstützt: {ext} (JPG, PNG, WebP, PDF, JSON)")
+
+        # Originaldatei dauerhaft speichern
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        orig_fname = f"src_{uuid.uuid4().hex}{ext}"
+        (UPLOAD_DIR / orig_fname).write_bytes(data)
+
+        try:
+            claude = get_claude()
+            b64 = base64.standard_b64encode(data).decode()
+            content = (
+                [{"type": "document", "source": {"type": "base64",
+                  "media_type": "application/pdf", "data": b64}}]
+                if ext == ".pdf" else
+                [{"type": "image", "source": {"type": "base64",
+                  "media_type": media_map[ext], "data": b64}}]
+            )
+            content.append({"type": "text", "text": PROMPT_IMAGE,
+                            "cache_control": {"type": "ephemeral"}})
+            msg = claude.messages.create(
+                model=CLAUDE_MODEL, max_tokens=2000,
+                messages=[{"role": "user", "content": content}]
+            )
+        except Exception:
+            raise HTTPException(502, "Rezeptanalyse ist derzeit nicht verfügbar, bitte erneut versuchen")
+
+        try:
+            result = parse_claude(msg.content[0].text)
+        except Exception:
+            raise HTTPException(502, "Rezeptanalyse lieferte keine verwertbare Antwort, bitte erneut versuchen")
+        if result.get("fehler"):
+            raise HTTPException(422, result["fehler"])
+
+        result["quelle_typ"] = "pdf-import" if ext == ".pdf" else "bild-import"
+        result["quelldatei"] = orig_fname
+
+        if ext != ".pdf":
+            import_fname = resize_and_save(data, ext)
+            internet_fname = search_recipe_image(result.get("titel", ""))
+            if internet_fname:
+                result["downloaded_image"] = internet_fname
+                result["import_image"] = import_fname
+            else:
+                result["downloaded_image"] = import_fname
+                result["import_image"] = None
+
+        return result
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(500, "Datei konnte nicht verarbeitet werden, bitte erneut versuchen")
 
 
 @router.post("/api/rezept-suche")

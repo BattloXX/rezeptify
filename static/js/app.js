@@ -11,6 +11,7 @@ import { initEinkauf, loadEinkauf } from './views/einkauf.js';
 import { initWochenplan, loadWochenplan } from './views/wochenplan.js';
 import { initSystem, loadSystem } from './views/system.js';
 import { initUpdateLog, loadUpdateLog } from './views/update-log.js';
+import { initErrorLog, loadErrorLog } from './views/error-log.js';
 
 // ── Global state (accessed by all views) ─────────────────────────────────────
 export const S = {
@@ -40,6 +41,7 @@ export function showView(name) {
   if (name === 'wochenplan') loadWochenplan();
   if (name === 'system') loadSystem();
   if (name === 'update-log') loadUpdateLog();
+  if (name === 'error-log') loadErrorLog();
 }
 window.showView = showView;
 
@@ -153,6 +155,8 @@ window.addEventListener('appinstalled', () => {
 window.addEventListener('popstate', () => {
   if (window.location.pathname === '/update-log') {
     showView('update-log');
+  } else if (window.location.pathname === '/error-log') {
+    showView('error-log');
   } else if (window.location.pathname === '/') {
     document.getElementById('ov-detail')?.classList.remove('on');
     document.body.style.overflow = '';
@@ -183,11 +187,12 @@ document.addEventListener('DOMContentLoaded', () => {
   initWochenplan();
   initSystem();
   initUpdateLog();
+  initErrorLog();
 
-  if (window.location.pathname === '/update-log') {
+  if (window.location.pathname === '/update-log' || window.location.pathname === '/error-log') {
     registerServiceWorker();
     hideLogin();
-    showView('update-log');
+    showView(window.location.pathname === '/error-log' ? 'error-log' : 'update-log');
     return;
   }
 

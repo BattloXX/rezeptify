@@ -44,12 +44,13 @@ def client():
     from app import app
     from db import get_db
 
-    with TestClient(app) as test_client:
+    with TestClient(app, raise_server_exceptions=False) as test_client:
         with get_db() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM einkaufsliste_eintraege")
                 cur.execute("DELETE FROM wochenplan")
                 cur.execute("DELETE FROM kochhistorie")
+                cur.execute("DELETE FROM error_log")
                 cur.execute("DELETE FROM system_updates")
                 cur.execute("DELETE FROM rezepte")
         yield test_client

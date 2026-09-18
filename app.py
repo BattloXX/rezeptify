@@ -1,14 +1,17 @@
 """Rezeptify v2.0 — FastAPI entry point."""
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from config import BASE_DIR, UPLOAD_DIR, APP_TITLE, DEBUG
-from db import init_db
+from db import get_db, init_db
 from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system
+
+logger = logging.getLogger(__name__)
 
 
 def _read_version() -> str:
@@ -41,6 +44,25 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Log unexpected errors without exposing their details to clients."""
+    logger.exception("Unbehandelter Fehler bei %s %s", request.method, request.url.path)
+    try:
+        message = system._redact_secrets(str(exc)[:1000])
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""INSERT INTO error_log (methode, pfad, exception_typ, nachricht)
+                    VALUES (%s, %s, %s, %s)""", (
+                    request.method[:10], request.url.path[:500],
+                    type(exc).__name__[:255], message,
+                ))
+    except Exception:
+        # A database outage must not prevent a safe error response.
+        logger.exception("Fehler konnte nicht im error_log gespeichert werden")
+    return JSONResponse(status_code=500, content={"detail": "Serverfehler, bitte erneut versuchen"})
 
 try:
     from config import CORS_ORIGINS
