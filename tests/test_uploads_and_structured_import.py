@@ -51,6 +51,28 @@ def test_recipe_image_upload_rejects_a_renamed_non_image(client):
     assert "lesbares Bild" in response.json()["detail"]
 
 
+def test_recipe_difficulty_rejects_invalid_values_and_saves_leicht(client):
+    payload = {
+        "titel": "Leichtes Rezept", "zutaten": [], "zubereitung": "Mischen.",
+        "portionen": 2, "tags": [], "schwierigkeit": "leicht",
+    }
+    created = client.post("/api/rezepte", json=payload)
+    assert created.status_code == 201
+    recipe = created.json()
+    assert recipe["schwierigkeit"] == "leicht"
+
+    invalid_post = client.post("/api/rezepte", json={**payload, "schwierigkeit": "einfach"})
+    assert invalid_post.status_code == 422
+    assert "schwierigkeit" in str(invalid_post.json()["detail"])
+
+    invalid_put = client.put(
+        f"/api/rezepte/{recipe['id']}", json={**payload, "schwierigkeit": "einfach"}
+    )
+    assert invalid_put.status_code == 422
+    assert "schwierigkeit" in str(invalid_put.json()["detail"])
+    assert client.get(f"/api/rezepte/{recipe['id']}").json()["schwierigkeit"] == "leicht"
+
+
 def test_json_recipe_import_parses_without_claude_and_creates_recipe(client, monkeypatch):
     # The JSON branch must never ask Claude for a key or a completion.
     monkeypatch.setattr("routes.ai.check_api_key", lambda: (_ for _ in ()).throw(AssertionError("Claude used")))

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Literal, Optional, List
 
 
 class Zutat(BaseModel):
@@ -17,7 +17,7 @@ class RezeptIn(BaseModel):
     portionen:               Optional[int] = 4
     zeit_vorb:               Optional[int] = 0
     zeit_koch:               Optional[int] = 0
-    schwierigkeit:           Optional[str] = "mittel"
+    schwierigkeit:           Literal["leicht", "mittel", "schwer"] = "mittel"
     kategorie:               Optional[str] = ""
     tags:                    Optional[List[str]] = []
     quelle_url:              Optional[str] = ""
