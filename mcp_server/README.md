@@ -59,6 +59,11 @@ Der Server bietet `search_recipes`, `list_categories`, `list_tags` und
 `add_recipe`. Vor dem Anlegen soll Claude immer zuerst nach ähnlichen Rezepten
 suchen, damit keine Duplikate entstehen.
 
+MCP ist immer geschützt, auch wenn die Website und REST-API mit
+`AUTH_ENABLED=False` öffentlich betrieben werden. Ein statisches Token ist nur
+für MCP gültig; für OAuth wird `MCP_LOGIN_PASSWORD` verwendet, falls gesetzt,
+sonst `AUTH_PASSWORD`.
+
 ## Remote-Verbindung
 
 Die laufende Rezeptify-Installation stellt den Streamable-HTTP-Endpunkt unter
@@ -100,3 +105,8 @@ Loginseite; dort wird das bestehende Familienpasswort eingegeben. Danach erhält
 der Connector ein eigenes OAuth-Token mit PKCE und kann Rezepte abrufen oder
 anlegen. Die Verbindung kann jederzeit in den Connector-Einstellungen getrennt
 werden.
+
+Wenn `AUTH_ENABLED=True` und `MCP_API_TOKEN` leer ist, kann der MCP-Server zwar
+authentifizieren, seine Tools können die REST-API aber nicht aufrufen und
+liefern einen klaren API-Fehler. Daher bei aktivierter REST-Auth immer auch ein
+`MCP_API_TOKEN` setzen.

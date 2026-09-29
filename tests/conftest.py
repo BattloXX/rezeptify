@@ -26,6 +26,7 @@ def _install_test_config():
     module.AUTH_ENABLED = False
     module.AUTH_PASSWORD = ""
     module.MCP_API_TOKEN = "test-mcp-token"
+    module.MCP_LOGIN_PASSWORD = ""
     module.CORS_ORIGINS = ["*"]
     module.MAX_UPLOAD_MB = 10
     module.ALLOWED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}

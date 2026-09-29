@@ -10,10 +10,9 @@ CHALLENGE = "ZtNPunH49FD35FWYhT5Tv8I7vRKQJ8uxMaL0_9eHjNA"
 def _enable_oauth(monkeypatch):
     import mcp_server.auth as mcp_auth
     import routes.mcp_auth as login
-    monkeypatch.setattr(mcp_auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(mcp_auth, "MCP_API_TOKEN", "test-mcp-token")
-    monkeypatch.setattr(login, "AUTH_ENABLED", True)
     monkeypatch.setattr(login, "AUTH_PASSWORD", "test-secret")
+    monkeypatch.setattr(login, "MCP_LOGIN_PASSWORD", "test-mcp-login")
 
 
 def _register(client):
@@ -28,7 +27,7 @@ def _register(client):
     return response.json()
 
 
-def _authorize_and_login(client, client_info, password="test-secret"):
+def _authorize_and_login(client, client_info, password="test-mcp-login"):
     response = client.get("/authorize", params={
         "client_id": client_info["client_id"], "redirect_uri": REDIRECT_URI,
         "response_type": "code", "code_challenge": CHALLENGE,
@@ -71,6 +70,27 @@ def test_authorization_code_pkce_flow_and_mcp_access(client, monkeypatch):
         "Accept": "application/json, text/event-stream"}, json={"jsonrpc":"2.0","id":1,"method":"initialize",
         "params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}})
     assert response.status_code == 200
+
+
+def test_mcp_login_falls_back_to_auth_password(client, monkeypatch):
+    _enable_oauth(monkeypatch)
+    import routes.mcp_auth as login
+    monkeypatch.setattr(login, "MCP_LOGIN_PASSWORD", "")
+    registered = _register(client)
+
+    assert _authorize_and_login(client, registered, password="test-secret").status_code == 302
+
+
+def test_empty_effective_mcp_password_rejects_login(client, monkeypatch):
+    _enable_oauth(monkeypatch)
+    import routes.mcp_auth as login
+    monkeypatch.setattr(login, "MCP_LOGIN_PASSWORD", "")
+    monkeypatch.setattr(login, "AUTH_PASSWORD", "")
+    registered = _register(client)
+
+    response = _authorize_and_login(client, registered, password="")
+    assert response.status_code == 200
+    assert "Anmeldung nicht möglich" in response.text
 
 
 def test_expired_replayed_and_wrong_pkce_codes_are_rejected(client, monkeypatch):

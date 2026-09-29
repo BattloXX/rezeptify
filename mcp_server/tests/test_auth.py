@@ -7,7 +7,6 @@ from mcp.server.auth.provider import AccessToken
 
 @pytest.mark.asyncio
 async def test_correct_token_returns_access_token(monkeypatch):
-    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth, "MCP_API_TOKEN", "test-mcp-token")
 
     token = await StaticBearerTokenVerifier().verify_token("test-mcp-token")
@@ -20,23 +19,21 @@ async def test_correct_token_returns_access_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_wrong_token_is_rejected(monkeypatch):
-    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth, "MCP_API_TOKEN", "test-mcp-token")
 
     assert await StaticBearerTokenVerifier().verify_token("wrong-token") is None
 
 
 @pytest.mark.asyncio
-async def test_auth_disabled_rejects_even_the_correct_token(monkeypatch):
-    monkeypatch.setattr(auth, "AUTH_ENABLED", False)
+async def test_auth_disabled_still_accepts_the_correct_token(monkeypatch):
+    monkeypatch.setattr(auth, "AUTH_ENABLED", False, raising=False)
     monkeypatch.setattr(auth, "MCP_API_TOKEN", "test-mcp-token")
 
-    assert await StaticBearerTokenVerifier().verify_token("test-mcp-token") is None
+    assert isinstance(await StaticBearerTokenVerifier().verify_token("test-mcp-token"), AccessToken)
 
 
 @pytest.mark.asyncio
 async def test_empty_token_never_authorizes(monkeypatch):
-    monkeypatch.setattr(auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(auth, "MCP_API_TOKEN", "")
 
     assert await StaticBearerTokenVerifier().verify_token("anything") is None

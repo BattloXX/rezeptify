@@ -4,17 +4,16 @@ import secrets
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 
 try:
-    from config import MCP_API_TOKEN, AUTH_ENABLED
+    from config import MCP_API_TOKEN
 except ImportError:
     MCP_API_TOKEN = ""
-    AUTH_ENABLED = False
 
 
 class StaticBearerTokenVerifier(TokenVerifier):
     """Verify Rezeptify's existing static MCP token at request time."""
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        if not AUTH_ENABLED or not MCP_API_TOKEN:
+        if not MCP_API_TOKEN:
             return None
         if not secrets.compare_digest(token.encode(), MCP_API_TOKEN.encode()):
             return None
