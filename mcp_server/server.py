@@ -1,10 +1,13 @@
 """Local stdio MCP server for adding recipes to Rezeptify."""
+import functools
+import logging
 import os
 import sys
 from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.server.auth.routes import create_auth_routes, create_protected_resource_routes
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
@@ -18,6 +21,20 @@ from mcp_server.oauth_provider import RezeptifyOAuthProvider
 
 _production_oauth_provider: RezeptifyOAuthProvider | None = None
 
+logger = logging.getLogger(__name__)
+
+
+def _logged(fn):
+    """Log tool failures with their traceback and always return a readable message."""
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await fn(*args, **kwargs)
+        except Exception as exc:
+            logger.exception("MCP-Tool %s fehlgeschlagen", fn.__name__)
+            raise RuntimeError(f"{type(exc).__name__}: {exc}") from exc
+    return wrapper
+
 
 class Ingredient(BaseModel):
     amount: str = ""
@@ -30,6 +47,7 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
     """Register the common recipe tools for both MCP transports."""
 
     @server.tool()
+    @_logged
     async def add_recipe(
         title: str,
         steps: list[str],
@@ -74,12 +92,14 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         }
 
     @server.tool()
+    @_logged
     async def search_recipes(
         query: str = "", category: str = "", tag: str = "", limit: int = 10
     ) -> list[dict]:
         return await client.search_recipes(query, category, tag, limit)
 
     @server.tool()
+    @_logged
     async def get_recipe(recipe_id: int) -> dict:
         """Read a complete recipe before changing it.
 
@@ -91,6 +111,7 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         return recipe
 
     @server.tool()
+    @_logged
     async def update_recipe(
         recipe_id: int,
         title: str | None = None,
@@ -136,10 +157,12 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         return recipe
 
     @server.tool()
+    @_logged
     async def list_categories() -> list[str]:
         return await client.list_categories()
 
     @server.tool()
+    @_logged
     async def list_tags() -> list[str]:
         return await client.list_tags()
 
@@ -212,6 +235,11 @@ class _ProtectedMCPApp:
             self.app = None
 
 
+async def _call_rest_app(scope, receive, send) -> None:
+    from app import app as rest_app  # resolved lazily: app.py imports this module
+    await rest_app(scope, receive, send)
+
+
 def build_production_http_app() -> Starlette | _ProtectedMCPApp:
     """Build the in-process remote MCP endpoint used by the FastAPI application."""
     try:
@@ -223,8 +251,14 @@ def build_production_http_app() -> Starlette | _ProtectedMCPApp:
     except ImportError:
         PUBLIC_BASE_URL = "https://rezeptify.battlogg.at"
 
-    loopback_url = os.getenv("REZEPTIFY_LOOPBACK_URL", "http://127.0.0.1:8000")
-    client = RezeptifyClient(loopback_url, MCP_API_TOKEN)
+    loopback_url = os.getenv("REZEPTIFY_LOOPBACK_URL")
+    if loopback_url:
+        client = RezeptifyClient(loopback_url, MCP_API_TOKEN)
+    else:
+        # Call the REST API inside this process: no dependency on the port the
+        # process manager (CloudPanel/systemd) happens to bind.
+        client = RezeptifyClient("http://rezeptify.internal", MCP_API_TOKEN,
+                                 transport=httpx.ASGITransport(app=_call_rest_app))
     # mcp==2.2.0 deliberately rejects arbitrary clear-text issuers.  The
     # in-process TestClient uses ``http://testserver`` while the production
     # value is HTTPS, so use its permitted localhost spelling only for SDK
