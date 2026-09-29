@@ -25,6 +25,7 @@ def _install_test_config():
     module.CLAUDE_MODEL = "claude-haiku-4-5-20251001"
     module.AUTH_ENABLED = False
     module.AUTH_PASSWORD = ""
+    module.MCP_API_TOKEN = "test-mcp-token"
     module.CORS_ORIGINS = ["*"]
     module.MAX_UPLOAD_MB = 10
     module.ALLOWED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}

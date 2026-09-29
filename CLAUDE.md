@@ -46,6 +46,8 @@ The database schema is auto-created and migrated on startup (`init_db()` in `app
 
 **Deployment target**: CloudPanel + uWSGI or systemd user service. Entry points: `app:app` (uvicorn) or `wsgi:application` (uWSGI via `wsgi.py`).
 
+**MCP server**: `mcp_server/` is a standalone local MCP server package. It is never deployed to the production server and talks to the API over HTTPS using its own Bearer token.
+
 ## Key Patterns
 
 - Slugs are generated via `make_slug()` (Unicode normalization + recipe ID suffix for uniqueness) and stored in DB
