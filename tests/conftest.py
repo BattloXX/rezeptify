@@ -49,6 +49,10 @@ def client():
     with TestClient(app, raise_server_exceptions=False) as test_client:
         with get_db() as conn:
             with conn.cursor() as cur:
+                cur.execute("DELETE FROM mcp_oauth_tokens")
+                cur.execute("DELETE FROM mcp_oauth_auth_codes")
+                cur.execute("DELETE FROM mcp_oauth_pending")
+                cur.execute("DELETE FROM mcp_oauth_clients")
                 cur.execute("DELETE FROM einkaufsliste_eintraege")
                 cur.execute("DELETE FROM wochenplan")
                 cur.execute("DELETE FROM kochhistorie")

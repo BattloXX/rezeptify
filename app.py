@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from config import BASE_DIR, UPLOAD_DIR, APP_TITLE, DEBUG
 from db import get_db, init_db
-from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system
+from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system, mcp_auth
 from mcp_server.server import build_production_http_app
 
 logger = logging.getLogger(__name__)
@@ -103,6 +103,8 @@ app.include_router(einkauf.router)
 app.include_router(planung.router)
 app.include_router(system.public_router)
 app.include_router(system.router)
+app.include_router(mcp_auth.router)
+app.router.routes.extend(mcp_http_app.oauth_routes)
 
 app.mount("/mcp", mcp_http_app)
 
