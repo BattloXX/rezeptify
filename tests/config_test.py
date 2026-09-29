@@ -20,6 +20,7 @@ MAX_UPLOAD_MB = 10
 ALLOWED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
 APP_TITLE = "Rezeptify Test"
 DEBUG = True
+PUBLIC_BASE_URL = os.getenv("TEST_PUBLIC_BASE_URL", "http://testserver")
 UPDATE_GIT_REMOTE = "origin"
 UPDATE_GIT_BRANCH = "main"
 BACKUP_DIR = BASE_DIR / "backups"

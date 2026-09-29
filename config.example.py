@@ -43,6 +43,7 @@ ALLOWED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
 # ── App ───────────────────────────────────────────────────────────────────────
 APP_TITLE = "Rezeptify"
 DEBUG     = False
+PUBLIC_BASE_URL = "https://rezeptify.battlogg.at"
 
 # ── Browser-Updates (nur serverseitig konfigurieren) ─────────────────────────
 # Diese Werte werden nie über eine HTTP-Anfrage entgegengenommen.
