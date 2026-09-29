@@ -79,6 +79,23 @@ def test_mcp_does_not_fall_through_to_spa(client, monkeypatch):
     assert b"<html" not in response.content.lower()
 
 
+def test_mounted_mcp_registers_recipe_read_and_update_tools(client, monkeypatch):
+    import mcp_server.auth as mcp_auth
+
+    monkeypatch.setattr(mcp_auth, "MCP_API_TOKEN", "test-mcp-token")
+    initialized = _initialize(client, {"Authorization": "Bearer test-mcp-token"})
+    session_id = initialized.headers["mcp-session-id"]
+    response = client.post("/mcp", headers={
+        **MCP_HEADERS,
+        "Authorization": "Bearer test-mcp-token",
+        "mcp-session-id": session_id,
+    }, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+
+    assert response.status_code == 200
+    names = {tool["name"] for tool in _sse_result(response)["tools"]}
+    assert {"get_recipe", "update_recipe"} <= names
+
+
 def test_rest_api_remains_public_when_rest_auth_is_disabled(client):
     response = client.get("/api/kategorien")
 

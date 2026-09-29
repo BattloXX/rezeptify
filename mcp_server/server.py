@@ -80,6 +80,62 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         return await client.search_recipes(query, category, tag, limit)
 
     @server.tool()
+    async def get_recipe(recipe_id: int) -> dict:
+        """Read a complete recipe before changing it.
+
+        First call search_recipes to find the recipe ID, then call this tool
+        before update_recipe so existing content is preserved intentionally.
+        """
+        recipe = await client.get_recipe(recipe_id)
+        recipe["url"] = f"{base_url.rstrip('/')}/rezept/{recipe['slug']}"
+        return recipe
+
+    @server.tool()
+    async def update_recipe(
+        recipe_id: int,
+        title: str | None = None,
+        steps: list[str] | None = None,
+        description: str | None = None,
+        ingredients: list[Ingredient] | None = None,
+        servings: int | None = None,
+        prep_minutes: int | None = None,
+        cook_minutes: int | None = None,
+        difficulty: str | None = None,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        source_url: str | None = None,
+        calories_per_serving: int | None = None,
+        image_url: str | None = None,
+    ) -> dict:
+        """Partially update one family recipe without deleting it.
+
+        First use search_recipes to find recipe_id and get_recipe to inspect it.
+        Pass only fields that should change; None keeps a field unchanged, while
+        empty ingredients or tags lists deliberately clear those fields. This
+        tool cannot delete recipes or change rating, favorite, or existing images;
+        image_url can only add a new main image.
+        """
+        recipe = await client.update_recipe(
+            recipe_id,
+            title=title,
+            steps=steps,
+            description=description,
+            ingredients=[ingredient.model_dump() for ingredient in ingredients]
+            if ingredients is not None else None,
+            servings=servings,
+            prep_minutes=prep_minutes,
+            cook_minutes=cook_minutes,
+            difficulty=difficulty,
+            category=category,
+            tags=tags,
+            source_url=source_url,
+            calories_per_serving=calories_per_serving,
+            image_url=image_url,
+        )
+        recipe["url"] = f"{base_url.rstrip('/')}/rezept/{recipe['slug']}"
+        return recipe
+
+    @server.tool()
     async def list_categories() -> list[str]:
         return await client.list_categories()
 
