@@ -207,6 +207,65 @@ def init_db():
                     INDEX idx_error_log_erstellt_am (erstellt_am)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS mcp_oauth_clients (
+                    client_id VARCHAR(255) PRIMARY KEY,
+                    client_name VARCHAR(255) NULL,
+                    redirect_uris JSON NOT NULL,
+                    grant_types JSON NOT NULL,
+                    response_types JSON NOT NULL,
+                    token_endpoint_auth_method VARCHAR(50) NOT NULL DEFAULT 'none',
+                    scope VARCHAR(255) NULL,
+                    metadata JSON NULL,
+                    erstellt_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS mcp_oauth_auth_codes (
+                    code_hash CHAR(64) PRIMARY KEY,
+                    client_id VARCHAR(255) NOT NULL,
+                    redirect_uri VARCHAR(500) NOT NULL,
+                    redirect_uri_explicit TINYINT(1) NOT NULL DEFAULT 1,
+                    code_challenge VARCHAR(255) NOT NULL,
+                    scope VARCHAR(255) NULL,
+                    resource VARCHAR(500) NULL,
+                    subject VARCHAR(255) NULL,
+                    expires_at DATETIME NOT NULL,
+                    erstellt_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (client_id) REFERENCES mcp_oauth_clients(client_id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS mcp_oauth_tokens (
+                    token_hash CHAR(64) PRIMARY KEY,
+                    token_type ENUM('access','refresh') NOT NULL,
+                    client_id VARCHAR(255) NOT NULL,
+                    scope VARCHAR(255) NULL,
+                    resource VARCHAR(500) NULL,
+                    subject VARCHAR(255) NULL,
+                    expires_at DATETIME NULL,
+                    revoked TINYINT(1) NOT NULL DEFAULT 0,
+                    linked_token_hash CHAR(64) NULL,
+                    erstellt_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_mcp_oauth_tokens_client (client_id),
+                    FOREIGN KEY (client_id) REFERENCES mcp_oauth_clients(client_id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS mcp_oauth_pending (
+                    pending_id CHAR(64) PRIMARY KEY,
+                    client_id VARCHAR(255) NOT NULL,
+                    redirect_uri VARCHAR(500) NOT NULL,
+                    redirect_uri_explicit TINYINT(1) NOT NULL DEFAULT 1,
+                    code_challenge VARCHAR(255) NOT NULL,
+                    scope VARCHAR(255) NULL,
+                    resource VARCHAR(500) NULL,
+                    state_value VARCHAR(2048) NULL,
+                    expires_at DATETIME NOT NULL,
+                    erstellt_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (client_id) REFERENCES mcp_oauth_clients(client_id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
             for k in ["Frühstück","Vorspeise","Hauptgericht","Dessert","Snack",
                       "Getränk","Backen","Salat","Suppe","Sonstiges"]:
                 cur.execute("INSERT IGNORE INTO kategorien (name) VALUES (%s)", (k,))

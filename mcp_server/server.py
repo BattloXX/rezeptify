@@ -6,13 +6,18 @@ from typing import Any
 from urllib.parse import urlparse
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.auth.routes import create_auth_routes, create_protected_resource_routes
+from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.server.auth.settings import AuthSettings
 from pydantic import BaseModel, Field
 from starlette.applications import Starlette
 
 from mcp_server import auth
-from mcp_server.auth import StaticBearerTokenVerifier
 from mcp_server.client import RezeptifyClient
+from mcp_server.oauth_provider import RezeptifyOAuthProvider
+
+
+_production_oauth_provider: RezeptifyOAuthProvider | None = None
 
 
 class Ingredient(BaseModel):
@@ -120,10 +125,12 @@ def create_http_asgi_app(
 class _ConditionalAuthApp:
     """Choose the public or Bearer-protected MCP app from current auth settings."""
 
-    def __init__(self, client: RezeptifyClient, base_url: str, auth_settings: AuthSettings):
+    def __init__(self, client: RezeptifyClient, base_url: str, auth_settings: AuthSettings,
+                 oauth_provider: RezeptifyOAuthProvider):
         self.client = client
         self.base_url = base_url
         self.auth_settings = auth_settings
+        self.oauth_provider = oauth_provider
         self.protected_app: Starlette | None = None
         self.public_app: Starlette | None = None
 
@@ -142,7 +149,7 @@ class _ConditionalAuthApp:
         self.protected_app = create_http_asgi_app(
             self.client,
             self.base_url,
-            token_verifier=StaticBearerTokenVerifier(),
+            auth_server_provider=self.oauth_provider,
             auth_settings=self.auth_settings,
         )
         self.public_app = create_http_asgi_app(self.client, self.base_url)
@@ -168,14 +175,40 @@ def build_production_http_app() -> Starlette | _ConditionalAuthApp:
 
     loopback_url = os.getenv("REZEPTIFY_LOOPBACK_URL", "http://127.0.0.1:8000")
     client = RezeptifyClient(loopback_url, MCP_API_TOKEN)
+    # mcp==2.2.0 deliberately rejects arbitrary clear-text issuers.  The
+    # in-process TestClient uses ``http://testserver`` while the production
+    # value is HTTPS, so use its permitted localhost spelling only for SDK
+    # route construction in that test-only case.
+    issuer_url = "http://localhost" if PUBLIC_BASE_URL == "http://testserver" else PUBLIC_BASE_URL
     auth_settings = AuthSettings(
-        issuer_url=PUBLIC_BASE_URL,
+        issuer_url=issuer_url,
         resource_server_url=f"{PUBLIC_BASE_URL.rstrip('/')}/mcp",
-        validate_token_resource=False,
+        client_registration_options=ClientRegistrationOptions(enabled=True),
+        revocation_options=RevocationOptions(enabled=True),
+        required_scopes=[],
+        validate_token_resource=True,
     )
+    global _production_oauth_provider
+    _production_oauth_provider = RezeptifyOAuthProvider()
     # The SDK makes a token verifier mandatory for every request. Keep a second,
     # unprotected app so AUTH_ENABLED remains a runtime switch just like REST auth.
-    return _ConditionalAuthApp(client, PUBLIC_BASE_URL, auth_settings)
+    app = _ConditionalAuthApp(client, PUBLIC_BASE_URL, auth_settings, _production_oauth_provider)
+    # The MCP sub-application is mounted at /mcp, but OAuth discovery is required
+    # at the domain root. app.py registers these routes before the SPA catch-all.
+    app.oauth_routes = [
+        *create_auth_routes(_production_oauth_provider, auth_settings.issuer_url,
+                            client_registration_options=auth_settings.client_registration_options,
+                            revocation_options=auth_settings.revocation_options),
+        *create_protected_resource_routes(auth_settings.resource_server_url,
+                                          [auth_settings.issuer_url], scopes_supported=[]),
+    ]
+    return app
+
+
+def get_production_oauth_provider() -> RezeptifyOAuthProvider:
+    if _production_oauth_provider is None:
+        raise RuntimeError("OAuth-Anbieter wurde nicht initialisiert")
+    return _production_oauth_provider
 
 
 def main() -> None:

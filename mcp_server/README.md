@@ -90,3 +90,13 @@ claude mcp add --transport http rezeptify-remote https://rezeptify.battlogg.at/m
 In Claude Desktop wird ein Remote-Connector über **Customize → Connectors → Add
 custom connector** mit dieser URL angelegt. Der Endpoint erwartet den Header
 `Authorization: Bearer <MCP_API_TOKEN>`.
+
+## claude.ai / ChatGPT verbinden
+
+Für die Web-Connectoren von claude.ai und ChatGPT wird kein Token manuell
+eingetragen. Stattdessen die MCP-URL `https://rezeptify.battlogg.at/mcp` als
+Custom Connector/App hinzufügen. Beim ersten Zugriff erscheint die Rezeptify-
+Loginseite; dort wird das bestehende Familienpasswort eingegeben. Danach erhält
+der Connector ein eigenes OAuth-Token mit PKCE und kann Rezepte abrufen oder
+anlegen. Die Verbindung kann jederzeit in den Connector-Einstellungen getrennt
+werden.
