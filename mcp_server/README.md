@@ -1,8 +1,8 @@
 # Rezeptify MCP-Server
 
-Dieser eigenständige lokale MCP-Server erlaubt Claude Desktop oder Claude Code,
-Rezepte in der privaten Rezeptify-Installation zu suchen und anzulegen. Er läuft
-nicht auf dem Produktionsserver, sondern auf dem Rechner, auf dem Claude läuft.
+Der MCP-Server erlaubt Claude Desktop oder Claude Code, Rezepte in der privaten
+Rezeptify-Installation zu suchen und anzulegen. Er kann lokal über stdio laufen
+oder als Remote-Server unter `/mcp` der Rezeptify-Installation angesprochen werden.
 
 ## Installation
 
@@ -58,3 +58,35 @@ dieses Repositories.
 Der Server bietet `search_recipes`, `list_categories`, `list_tags` und
 `add_recipe`. Vor dem Anlegen soll Claude immer zuerst nach ähnlichen Rezepten
 suchen, damit keine Duplikate entstehen.
+
+## Remote-Verbindung
+
+Die laufende Rezeptify-Installation stellt den Streamable-HTTP-Endpunkt unter
+`https://rezeptify.battlogg.at/mcp` bereit. Für Claude Code kann derselbe
+Remote-Server per JSON-Konfiguration eingebunden werden; das Token bleibt dabei
+in einer Umgebungsvariable:
+
+```json
+{
+  "mcpServers": {
+    "rezeptify-remote": {
+      "type": "http",
+      "url": "https://rezeptify.battlogg.at/mcp",
+      "headers": {
+        "Authorization": "Bearer ${REZEPTIFY_MCP_API_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Alternativ erzeugt Claude Code denselben Eintrag über die Kommandozeile:
+
+```bash
+claude mcp add --transport http rezeptify-remote https://rezeptify.battlogg.at/mcp \
+  --header "Authorization: Bearer $REZEPTIFY_MCP_API_TOKEN"
+```
+
+In Claude Desktop wird ein Remote-Connector über **Customize → Connectors → Add
+custom connector** mit dieser URL angelegt. Der Endpoint erwartet den Header
+`Authorization: Bearer <MCP_API_TOKEN>`.

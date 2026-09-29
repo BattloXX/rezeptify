@@ -10,8 +10,22 @@ from fastapi.responses import FileResponse, JSONResponse
 from config import BASE_DIR, UPLOAD_DIR, APP_TITLE, DEBUG
 from db import get_db, init_db
 from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system
+from mcp_server.server import build_production_http_app
 
 logger = logging.getLogger(__name__)
+mcp_http_app = build_production_http_app()
+
+
+class MCPBarePathMiddleware:
+    """Let the mounted MCP app serve its canonical endpoint without a slash."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"] == "/mcp":
+            scope = {**scope, "path": "/mcp/", "raw_path": b"/mcp/"}
+        await self.app(scope, receive, send)
 
 
 def _read_version() -> str:
@@ -28,14 +42,15 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    # Reaching startup after systemctl proves the requested restart completed.
-    from db import get_db
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""UPDATE system_updates SET status='abgeschlossen', beendet_am=NOW()
-                WHERE status='neustart_ausgeloest'""")
-    yield
+    async with mcp_http_app.lifespan():
+        init_db()
+        # Reaching startup after systemctl proves the requested restart completed.
+        from db import get_db
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""UPDATE system_updates SET status='abgeschlossen', beendet_am=NOW()
+                    WHERE status='neustart_ausgeloest'""")
+        yield
 
 
 app = FastAPI(
@@ -76,6 +91,7 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=True,
 )
+app.add_middleware(MCPBarePathMiddleware)
 
 app.include_router(vorschlag.router)
 app.include_router(rezepte.router)
@@ -87,6 +103,8 @@ app.include_router(einkauf.router)
 app.include_router(planung.router)
 app.include_router(system.public_router)
 app.include_router(system.router)
+
+app.mount("/mcp", mcp_http_app)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 

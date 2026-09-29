@@ -31,6 +31,7 @@ def _install_test_config():
     module.ALLOWED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
     module.APP_TITLE = "Rezeptify Test"
     module.DEBUG = True
+    module.PUBLIC_BASE_URL = "http://testserver"
     module.UPDATE_GIT_REMOTE = "origin"
     module.UPDATE_GIT_BRANCH = "main"
     module.BACKUP_DIR = root / "backups"

@@ -46,7 +46,7 @@ The database schema is auto-created and migrated on startup (`init_db()` in `app
 
 **Deployment target**: CloudPanel + uWSGI or systemd user service. Entry points: `app:app` (uvicorn) or `wsgi:application` (uWSGI via `wsgi.py`).
 
-**MCP server**: `mcp_server/` is a standalone local MCP server package. It is never deployed to the production server and talks to the API over HTTPS using its own Bearer token.
+**MCP server**: `mcp_server/` ships both a local stdio transport (`python -m mcp_server.server`) for a Claude Desktop/Code child process and a remote Streamable-HTTP transport mounted at `/mcp` in `app.py` via `build_production_http_app()`. Both use the same `MCP_API_TOKEN`/`AUTH_ENABLED` policy as the REST API.
 
 ## Key Patterns
 
