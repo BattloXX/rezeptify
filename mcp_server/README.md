@@ -55,9 +55,11 @@ dieses Repositories.
 }
 ```
 
-Der Server bietet `search_recipes`, `list_categories`, `list_tags` und
-`add_recipe`. Vor dem Anlegen soll Claude immer zuerst nach ähnlichen Rezepten
-suchen, damit keine Duplikate entstehen.
+Der Server bietet `search_recipes`, `get_recipe`, `add_recipe`, `update_recipe`,
+`list_categories` und `list_tags`. Vor dem Anlegen oder Ändern soll Claude immer
+zuerst nach ähnlichen Rezepten suchen. Vor `update_recipe` muss Claude
+`get_recipe` aufrufen und nur die zu ändernden Felder übergeben; leere Zutaten-
+oder Tag-Listen löschen diese gezielt.
 
 MCP ist immer geschützt, auch wenn die Website und REST-API mit
 `AUTH_ENABLED=False` öffentlich betrieben werden. Ein statisches Token ist nur
@@ -92,9 +94,12 @@ claude mcp add --transport http rezeptify-remote https://rezeptify.battlogg.at/m
   --header "Authorization: Bearer $REZEPTIFY_MCP_API_TOKEN"
 ```
 
-In Claude Desktop wird ein Remote-Connector über **Customize → Connectors → Add
-custom connector** mit dieser URL angelegt. Der Endpoint erwartet den Header
-`Authorization: Bearer <MCP_API_TOKEN>`.
+Für einen Remote-Connector in Claude Desktop oder claude.ai wird unter
+**Customize → Connectors → Add custom connector** nur die MCP-URL eingetragen.
+Beim anschließenden **Connect** läuft die OAuth-Anmeldung über die Rezeptify-
+Loginseite; ein Bearer-Token wird dort nicht manuell eingegeben. Die obige
+Header-Konfiguration ist für Claude Code gedacht. [Claude dokumentiert den
+OAuth-Connect-Ablauf für Remote-Connectoren](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
 
 ## claude.ai / ChatGPT verbinden
 

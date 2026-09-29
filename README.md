@@ -157,7 +157,11 @@ Das Datenbankschema wird beim Start automatisch angelegt und bei Updates migrier
 
 ## MCP-Server
 
-Rezepte lassen sich aus einem KI-Chat heraus suchen und anlegen. Tools: `add_recipe`, `search_recipes`, `list_categories`, `list_tags`. `add_recipe` nutzt denselben Validierungsweg wie der JSON-Import.
+Rezepte lassen sich aus einem KI-Chat heraus suchen, lesen, anlegen und ändern.
+Tools: `search_recipes`, `get_recipe`, `add_recipe`, `update_recipe`,
+`list_categories`, `list_tags`. Vor einer Änderung wird das Rezept mit
+`get_recipe` gelesen; `update_recipe` ändert nur übergebene Felder und nutzt für
+neue Rezepte denselben Validierungsweg wie der JSON-Import.
 
 | Verbindung | Wie |
 |------------|-----|
