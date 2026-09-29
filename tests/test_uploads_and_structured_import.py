@@ -142,3 +142,23 @@ def test_pdf_import_still_uses_ai_branch(client, monkeypatch):
     assert response.status_code == 200
     assert response.json()["quelle_typ"] == "pdf-import"
     assert response.json()["quelldatei"].endswith(".pdf")
+
+
+def test_structured_import_turns_ingredient_groups_into_marker_rows(client):
+    payload = {
+        "format": "rezeptify-recipe/v1", "title": "Brisket", "steps": ["Garen."],
+        "ingredients": [
+            {"amount": "3", "unit": "EL", "name": "Pfeffer", "group": "Rub"},
+            {"amount": "1", "unit": "EL", "name": "Salz", "group": "Rub"},
+            {"amount": "2", "unit": "kg", "name": "Rinderbrust", "group": "Fleisch"},
+            {"name": "Öl"},
+        ],
+    }
+    data = client.post(
+        "/api/analysiere-bild",
+        files={"file": ("r.json", json.dumps(payload).encode(), "application/json")},
+    ).json()
+    assert [(z["gruppe"], z["name"]) for z in data["zutaten"]] == [
+        ("Rub", ""), (None, "Pfeffer"), (None, "Salz"),
+        ("Fleisch", ""), (None, "Rinderbrust"), (None, "Öl"),
+    ]

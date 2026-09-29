@@ -70,6 +70,21 @@ def _error_detail(error: ValidationError) -> str:
     return "Ungültige Rezeptdatei: " + "; ".join(lines)
 
 
+def _ingredients_with_group_rows(items) -> list[Zutat]:
+    """Rezeptify stores a group as a marker row ({"gruppe": X}) before its ingredients."""
+    rows: list[Zutat] = []
+    current = None
+    for item in items:
+        group = (item.group or "").strip() or None
+        if group and group != current:
+            rows.append(Zutat(gruppe=group))
+        if group:
+            current = group
+        rows.append(Zutat(menge="" if item.amount is None else str(item.amount),
+                          einheit=item.unit or "", name=item.name))
+    return rows
+
+
 def parse_structured_recipe(data: bytes) -> tuple[RezeptIn, str | None]:
     """Parse a UTF-8 JSON file into the app's existing recipe input model."""
     try:
@@ -88,9 +103,7 @@ def parse_structured_recipe(data: bytes) -> tuple[RezeptIn, str | None]:
     recipe = RezeptIn(
         titel=parsed.title,
         beschreibung=parsed.description,
-        zutaten=[Zutat(menge="" if item.amount is None else str(item.amount),
-                        einheit=item.unit or "", name=item.name, gruppe=item.group)
-                  for item in parsed.ingredients],
+        zutaten=_ingredients_with_group_rows(parsed.ingredients),
         zubereitung="\n\n".join(parsed.steps),
         portionen=parsed.servings,
         zeit_vorb=parsed.prep_minutes,
