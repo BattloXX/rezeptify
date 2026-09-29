@@ -11,10 +11,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from mcp_server.oauth_provider import RezeptifyOAuthProvider
 
 try:
-    from config import AUTH_ENABLED, AUTH_PASSWORD
+    from config import AUTH_PASSWORD
 except ImportError:
-    AUTH_ENABLED = False
     AUTH_PASSWORD = ""
+try:
+    from config import MCP_LOGIN_PASSWORD
+except ImportError:
+    MCP_LOGIN_PASSWORD = ""
 
 
 router = APIRouter()
@@ -38,6 +41,11 @@ def _provider() -> RezeptifyOAuthProvider:
     return get_production_oauth_provider()
 
 
+def _effective_password() -> str:
+    """Prefer the MCP-specific password while retaining existing installations."""
+    return MCP_LOGIN_PASSWORD or AUTH_PASSWORD
+
+
 @router.get("/mcp/login", response_class=HTMLResponse)
 async def login_page(pending: str = ""):
     if not pending or not await _provider().get_pending(pending):
@@ -55,7 +63,9 @@ async def login_submit(request: Request, pending: str = Form(""), password: str 
     if len(attempts) >= 5:
         await asyncio.sleep(1)
         return _page(pending, error=True)
-    if not AUTH_ENABLED or not AUTH_PASSWORD or not secrets.compare_digest(password.encode(), AUTH_PASSWORD.encode()):
+    effective_password = _effective_password()
+    if (not effective_password
+            or not secrets.compare_digest(password.encode(), effective_password.encode())):
         attempts.append(now)
         await asyncio.sleep(0.2)
         return _page(pending, error=True)

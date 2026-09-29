@@ -29,7 +29,6 @@ def _sse_result(response):
 def test_mcp_rejects_missing_and_wrong_bearer_token(client, monkeypatch):
     import mcp_server.auth as mcp_auth
 
-    monkeypatch.setattr(mcp_auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(mcp_auth, "MCP_API_TOKEN", "test-mcp-token")
 
     missing = _initialize(client)
@@ -43,7 +42,6 @@ def test_mcp_rejects_missing_and_wrong_bearer_token(client, monkeypatch):
 def test_mcp_accepts_correct_bearer_token(client, monkeypatch):
     import mcp_server.auth as mcp_auth
 
-    monkeypatch.setattr(mcp_auth, "AUTH_ENABLED", True)
     monkeypatch.setattr(mcp_auth, "MCP_API_TOKEN", "test-mcp-token")
 
     response = _initialize(client, {"Authorization": "Bearer test-mcp-token"})
@@ -52,18 +50,36 @@ def test_mcp_accepts_correct_bearer_token(client, monkeypatch):
     assert _sse_result(response)["serverInfo"]["name"] == "rezeptify"
 
 
-def test_mcp_is_reachable_without_token_when_auth_is_disabled(client, monkeypatch):
+def test_mcp_requires_credentials_when_rest_auth_is_disabled(client, monkeypatch):
     import mcp_server.auth as mcp_auth
 
-    monkeypatch.setattr(mcp_auth, "AUTH_ENABLED", False)
+    monkeypatch.setattr(mcp_auth, "AUTH_ENABLED", False, raising=False)
+    monkeypatch.setattr(mcp_auth, "MCP_API_TOKEN", "")
+    assert _initialize(client).status_code == 401
 
-    assert _initialize(client).status_code == 200
+
+def test_static_token_works_when_rest_auth_is_disabled(client, monkeypatch):
+    import mcp_server.auth as mcp_auth
+
+    monkeypatch.setattr(mcp_auth, "AUTH_ENABLED", False, raising=False)
+    monkeypatch.setattr(mcp_auth, "MCP_API_TOKEN", "test-mcp-token")
+
+    assert _initialize(client, {"Authorization": "Bearer test-mcp-token"}).status_code == 200
 
 
-def test_mcp_does_not_fall_through_to_spa(client):
-    response = _initialize(client)
+def test_mcp_does_not_fall_through_to_spa(client, monkeypatch):
+    import mcp_server.auth as mcp_auth
+
+    monkeypatch.setattr(mcp_auth, "MCP_API_TOKEN", "test-mcp-token")
+    response = _initialize(client, {"Authorization": "Bearer test-mcp-token"})
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     assert "event: message" in response.text
     assert b"<html" not in response.content.lower()
+
+
+def test_rest_api_remains_public_when_rest_auth_is_disabled(client):
+    response = client.get("/api/kategorien")
+
+    assert response.status_code == 200

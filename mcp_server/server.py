@@ -12,7 +12,6 @@ from mcp.server.auth.settings import AuthSettings
 from pydantic import BaseModel, Field
 from starlette.applications import Starlette
 
-from mcp_server import auth
 from mcp_server.client import RezeptifyClient
 from mcp_server.oauth_provider import RezeptifyOAuthProvider
 
@@ -122,8 +121,8 @@ def create_http_asgi_app(
     return server.streamable_http_app(streamable_http_path="/", host=urlparse(base_url).hostname or "127.0.0.1")
 
 
-class _ConditionalAuthApp:
-    """Choose the public or Bearer-protected MCP app from current auth settings."""
+class _ProtectedMCPApp:
+    """Run a freshly-created, always-authenticated SDK app per lifespan."""
 
     def __init__(self, client: RezeptifyClient, base_url: str, auth_settings: AuthSettings,
                  oauth_provider: RezeptifyOAuthProvider):
@@ -131,38 +130,33 @@ class _ConditionalAuthApp:
         self.base_url = base_url
         self.auth_settings = auth_settings
         self.oauth_provider = oauth_provider
-        self.protected_app: Starlette | None = None
-        self.public_app: Starlette | None = None
+        self.app: Starlette | None = None
 
     async def __call__(self, scope, receive, send) -> None:
-        app = self.protected_app if auth.AUTH_ENABLED else self.public_app
-        if app is None:
+        if self.app is None:
             raise RuntimeError("MCP-Anwendung wurde noch nicht gestartet")
-        await app(scope, receive, send)
+        await self.app(scope, receive, send)
 
     @asynccontextmanager
     async def lifespan(self):
-        """Start both SDK session managers from the parent FastAPI lifespan."""
+        """Start the SDK session manager from the parent FastAPI lifespan."""
         # The SDK session manager can only be started once. Build fresh child
         # apps for every parent lifespan so FastAPI TestClient instances remain
         # independent while production still creates them exactly once.
-        self.protected_app = create_http_asgi_app(
+        self.app = create_http_asgi_app(
             self.client,
             self.base_url,
             auth_server_provider=self.oauth_provider,
             auth_settings=self.auth_settings,
         )
-        self.public_app = create_http_asgi_app(self.client, self.base_url)
         try:
-            async with self.protected_app.router.lifespan_context(self.protected_app):
-                async with self.public_app.router.lifespan_context(self.public_app):
-                    yield
+            async with self.app.router.lifespan_context(self.app):
+                yield
         finally:
-            self.protected_app = None
-            self.public_app = None
+            self.app = None
 
 
-def build_production_http_app() -> Starlette | _ConditionalAuthApp:
+def build_production_http_app() -> Starlette | _ProtectedMCPApp:
     """Build the in-process remote MCP endpoint used by the FastAPI application."""
     try:
         from config import MCP_API_TOKEN
@@ -190,9 +184,9 @@ def build_production_http_app() -> Starlette | _ConditionalAuthApp:
     )
     global _production_oauth_provider
     _production_oauth_provider = RezeptifyOAuthProvider()
-    # The SDK makes a token verifier mandatory for every request. Keep a second,
-    # unprotected app so AUTH_ENABLED remains a runtime switch just like REST auth.
-    app = _ConditionalAuthApp(client, PUBLIC_BASE_URL, auth_settings, _production_oauth_provider)
+    # Unlike REST authentication, MCP is always protected. The OAuth provider
+    # also accepts the configured legacy static bearer token.
+    app = _ProtectedMCPApp(client, PUBLIC_BASE_URL, auth_settings, _production_oauth_provider)
     # The MCP sub-application is mounted at /mcp, but OAuth discovery is required
     # at the domain root. app.py registers these routes before the SPA catch-all.
     app.oauth_routes = [

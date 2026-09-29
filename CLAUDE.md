@@ -46,7 +46,7 @@ The database schema is auto-created and migrated on startup (`init_db()` in `app
 
 **Deployment target**: CloudPanel + uWSGI or systemd user service. Entry points: `app:app` (uvicorn) or `wsgi:application` (uWSGI via `wsgi.py`).
 
-**MCP server**: `mcp_server/` ships both a local stdio transport (`python -m mcp_server.server`) and a remote Streamable-HTTP transport at `/mcp`. The remote endpoint supports OAuth 2.1 (DCR, PKCE, rotating refresh tokens) using the family-password login page; the legacy `MCP_API_TOKEN` remains valid for local clients.
+**MCP server**: `mcp_server/` ships both a local stdio transport (`python -m mcp_server.server`) and a remote Streamable-HTTP transport at `/mcp`. MCP is always authenticated, even when the SPA/REST API is public (`AUTH_ENABLED=False`): OAuth uses `MCP_LOGIN_PASSWORD` or falls back to `AUTH_PASSWORD`, and the legacy `MCP_API_TOKEN` remains valid.
 
 ## Key Patterns
 

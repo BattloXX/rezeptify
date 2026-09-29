@@ -187,7 +187,7 @@ class RezeptifyOAuthProvider:
         return await self._issue_tokens(client.client_id, scopes, refresh_token.resource, refresh_token.subject)
 
     async def load_access_token(self, token: str) -> AccessToken | None:
-        if (mcp_auth.AUTH_ENABLED and mcp_auth.MCP_API_TOKEN
+        if (mcp_auth.MCP_API_TOKEN
                 and secrets.compare_digest(token.encode(), mcp_auth.MCP_API_TOKEN.encode())):
             return AccessToken(token=token, client_id="rezeptify-mcp-static", scopes=[],
                                resource=f"{PUBLIC_BASE_URL.rstrip('/')}/mcp")

@@ -32,6 +32,9 @@ AUTH_PASSWORD = "DEIN_APP_PASSWORT"   # Nur Passwort, kein Benutzername nötig
 # Separates Bearer-Token für den lokalen MCP-Server (siehe mcp_server/README.md).
 # Erzeugen mit: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 MCP_API_TOKEN = ""
+# MCP ist immer geschützt; leer = AUTH_PASSWORD verwenden. Bei öffentlicher App
+# (AUTH_ENABLED=False) hier ein eigenes Passwort setzen.
+MCP_LOGIN_PASSWORD = ""
 
 # ── CORS (Produktion: eigene Domain eintragen) ────────────────────────────────
 CORS_ORIGINS = ["*"]   # z.B. ["https://rezeptify.battlogg.at"]
