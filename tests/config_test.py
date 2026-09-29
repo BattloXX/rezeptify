@@ -14,6 +14,7 @@ ANTHROPIC_API_KEY = "test-key"
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 AUTH_ENABLED = False
 AUTH_PASSWORD = ""
+MCP_API_TOKEN = "test-mcp-token"
 CORS_ORIGINS = ["*"]
 MAX_UPLOAD_MB = 10
 ALLOWED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}

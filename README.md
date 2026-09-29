@@ -170,6 +170,10 @@ GET    /api/tags                       Alle verwendeten Tags
 GET    /api/stats                      Statistiken
 ```
 
+## MCP-Server (lokal)
+
+Der eigenständige lokale MCP-Server ermöglicht Claude Desktop oder Claude Code, Rezepte über die Rezeptify-API mit einem eigenen Bearer-Token zu suchen und hinzuzufügen. Einrichtung und Konfiguration stehen in [mcp_server/README.md](mcp_server/README.md).
+
 ## Strukturierte Rezeptdateien (JSON)
 
 Neben PDF und Bildern akzeptiert der Datei-Import UTF-8-kodierte `.json`-Dateien.
