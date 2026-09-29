@@ -95,6 +95,32 @@ class RezeptifyClient:
         blocks = [block.strip() for block in re.split(r"\n\s*\n+", cleaned) if block.strip()]
         return blocks if len(blocks) > 1 else [cleaned]
 
+    @staticmethod
+    def _ingredients_from_rows(rows: list[dict]) -> list[dict]:
+        """Turn stored group marker rows into a `group` field on each ingredient."""
+        result, group = [], None
+        for row in rows:
+            if row.get("gruppe"):
+                group = row["gruppe"]
+                continue
+            result.append({"amount": row.get("menge") or "", "unit": row.get("einheit") or "",
+                           "name": row.get("name") or "", "group": group})
+        return result
+
+    @staticmethod
+    def _rows_from_ingredients(ingredients: list[dict]) -> list[dict]:
+        """Turn `group` fields into the marker rows Rezeptify stores."""
+        rows, current = [], None
+        for ingredient in ingredients:
+            group = (ingredient.get("group") or "").strip() or None
+            if group and group != current:
+                rows.append({"gruppe": group})
+            if group:
+                current = group
+            rows.append({"menge": ingredient.get("amount") or "", "einheit": ingredient.get("unit") or "",
+                         "name": ingredient.get("name") or "", "gruppe": None})
+        return rows
+
     def _recipe_shape(self, recipe: dict) -> dict:
         """Map the REST representation to the English MCP recipe shape."""
         return {
@@ -103,15 +129,7 @@ class RezeptifyClient:
             "url": f"{self.base_url}/rezept/{recipe['slug']}",
             "title": recipe.get("titel") or "",
             "description": recipe.get("beschreibung") or "",
-            "ingredients": [
-                {
-                    "amount": ingredient.get("menge") or "",
-                    "unit": ingredient.get("einheit") or "",
-                    "name": ingredient.get("name") or "",
-                    "group": ingredient.get("gruppe"),
-                }
-                for ingredient in (recipe.get("zutaten") or [])
-            ],
+            "ingredients": self._ingredients_from_rows(recipe.get("zutaten") or []),
             "steps": self._steps_from_instructions(recipe.get("zubereitung")),
             "servings": recipe.get("portionen"),
             "prep_minutes": recipe.get("zeit_vorb"),
@@ -177,15 +195,7 @@ class RezeptifyClient:
         if description is not None:
             payload["beschreibung"] = description
         if ingredients is not None:
-            payload["zutaten"] = [
-                {
-                    "menge": ingredient.get("amount") or "",
-                    "einheit": ingredient.get("unit") or "",
-                    "name": ingredient.get("name") or "",
-                    "gruppe": ingredient.get("group"),
-                }
-                for ingredient in ingredients
-            ]
+            payload["zutaten"] = self._rows_from_ingredients(ingredients)
         for value, key in (
             (servings, "portionen"), (prep_minutes, "zeit_vorb"),
             (cook_minutes, "zeit_koch"), (difficulty, "schwierigkeit"),

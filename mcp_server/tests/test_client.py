@@ -31,7 +31,7 @@ def _rest_recipe() -> dict:
         "slug": "alte-suppe-7",
         "titel": "Alte Suppe",
         "beschreibung": "Bewährtes Rezept.",
-        "zutaten": [{"menge": "2", "einheit": "Stk", "name": "Karotten", "gruppe": "Gemüse"}],
+        "zutaten": [{"gruppe": "Gemüse"}, {"menge": "2", "einheit": "Stk", "name": "Karotten", "gruppe": None}],
         "zubereitung": "Schneiden.\n\nKochen.",
         "portionen": 4,
         "zeit_vorb": 10,
@@ -185,7 +185,7 @@ async def test_update_recipe_merges_full_put_preserves_provenance_and_refreshes_
             assert request.url.path == "/api/rezepte/7"
             assert json.loads(request.content) == {
                 "titel": "Neue Suppe", "beschreibung": "Bewährtes Rezept.",
-                "zutaten": [{"menge": "2", "einheit": "Stk", "name": "Karotten", "gruppe": "Gemüse"}],
+                "zutaten": [{"gruppe": "Gemüse"}, {"menge": "2", "einheit": "Stk", "name": "Karotten", "gruppe": None}],
                 "zubereitung": "Neu kochen.", "portionen": 4, "zeit_vorb": 10, "zeit_koch": 20,
                 "schwierigkeit": "leicht", "kategorie": "Suppen", "tags": [],
                 "quelle_url": "https://example.test/quelle", "quelle_typ": "import",
@@ -261,3 +261,15 @@ async def test_update_recipe_surfaces_not_found_and_validation_details():
             await client.update_recipe(7, title="")
     finally:
         await client.aclose()
+
+
+def test_group_fields_round_trip_through_marker_rows():
+    ingredients = [
+        {"amount": "3", "unit": "EL", "name": "Pfeffer", "group": "Rub"},
+        {"amount": "1", "unit": "EL", "name": "Salz", "group": "Rub"},
+        {"amount": "2", "unit": "kg", "name": "Rinderbrust", "group": None},
+    ]
+    rows = RezeptifyClient._rows_from_ingredients(ingredients)
+    assert [row.get("gruppe") for row in rows] == ["Rub", None, None, None]
+    assert [row.get("name") for row in rows] == [None, "Pfeffer", "Salz", "Rinderbrust"]
+    assert RezeptifyClient._ingredients_from_rows(rows)[:2] == ingredients[:2]
