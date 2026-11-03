@@ -8,6 +8,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from auth import require_auth
+import auth
 import config
 from db import SCHEMA_VERSION, get_db
 from services.update_service import run_update
@@ -26,6 +27,10 @@ def _app_version() -> str:
     # Imported lazily to avoid a circular import while app.py constructs routers.
     from app import APP_VERSION
     return APP_VERSION
+
+
+def _admin_password():
+    return getattr(config, "ADMIN_PASSWORD", "") or getattr(config, "AUTH_PASSWORD", "")
 
 
 def semver_is_newer(current: str, candidate: str) -> bool:
@@ -69,7 +74,8 @@ def _redact_secrets(value: object) -> object:
     """Keep public update diagnostics useful without exposing credentials."""
     if not isinstance(value, str):
         return value
-    for name in ("AUTH_PASSWORD", "ANTHROPIC_API_KEY", "DB_PASSWORD"):
+    for name in ("AUTH_PASSWORD", "ADMIN_PASSWORD", "MCP_API_TOKEN", "MCP_LOGIN_PASSWORD",
+                 "ANTHROPIC_API_KEY", "DB_PASSWORD"):
         secret = getattr(config, name, "")
         if isinstance(secret, str) and secret:
             value = value.replace(secret, "[REDACTED]")
@@ -91,6 +97,12 @@ def _public_error(row: dict) -> dict:
         key: _redact_secrets(row.get(key)) if key in {"pfad", "nachricht"} else row.get(key)
         for key in ("erstellt_am", "methode", "pfad", "exception_typ", "nachricht")
     }
+
+
+@public_router.get("/api/config")
+def public_config():
+    return {"auth_enabled": bool(auth.AUTH_ENABLED), "version": _app_version(),
+            "update_im_browser": bool(_admin_password())}
 
 
 @public_router.get("/api/health")
@@ -140,8 +152,11 @@ def update_check():
 
 @router.post("/api/system/update")
 def start_update(body: dict, background_tasks: BackgroundTasks):
+    admin_password = _admin_password()
+    if not admin_password:
+        raise HTTPException(403, "Update im Browser ist deaktiviert (ADMIN_PASSWORD in config.py setzen)")
     password = body.get("passwort")
-    if not isinstance(password, str) or not secrets.compare_digest(password.encode(), config.AUTH_PASSWORD.encode()):
+    if not isinstance(password, str) or not secrets.compare_digest(password.encode(), admin_password.encode()):
         # 403, not 401: the frontend's global api() wrapper treats any 401 as an
         # expired session and force-logs-out the user. A wrong confirmation
         # password here is a separate concern from the session itself being invalid.

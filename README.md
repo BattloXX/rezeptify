@@ -138,11 +138,13 @@ Das Datenbankschema wird beim Start automatisch angelegt und bei Updates migrier
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | MariaDB-Zugang |
 | `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` | KI-Import und Suchbot |
 | `AUTH_ENABLED`, `AUTH_PASSWORD` | Passwortschutz von Website und REST-API (nur Passwort, kein Benutzername) |
-| `MCP_API_TOKEN` | Statisches Bearer-Token für MCP-Clients und den internen Zugriff des MCP-Servers auf die REST-API |
+| `MCP_API_TOKEN` | Statisches Bearer-Token für MCP-Clients (der interne Zugriff des MCP-Servers auf die REST-API braucht es nicht mehr) |
 | `MCP_LOGIN_PASSWORD` | Passwort der MCP-Login-Seite; leer = `AUTH_PASSWORD` |
 | `PUBLIC_BASE_URL` | Öffentliche URL der Installation, z. B. `https://rezeptify.battlogg.at` (wird für OAuth-Adressen gebraucht) |
 | `CORS_ORIGINS` | Erlaubte Origins, in Produktion die eigene Domain |
 | `MAX_UPLOAD_MB`, `ALLOWED_IMAGES` | Upload-Limits |
+| `ADMIN_PASSWORD` | Bestätigungspasswort fürs Browser-Update; leer = `AUTH_PASSWORD`; beide leer = Update im Browser deaktiviert |
+| `KI_LIMIT_PRO_IP_STUNDE`, `KI_LIMIT_GESAMT_TAG` | Obergrenzen für KI-Aufrufe (Standard 30 pro IP und Stunde, 300 pro Tag gesamt; 0 = unbegrenzt) |
 | `UPDATE_GIT_REMOTE`, `UPDATE_GIT_BRANCH`, `BACKUP_DIR` | Browser-Update; `BACKUP_DIR` muss außerhalb von `static/` liegen |
 | `DEBUG` | `True` aktiviert `/api/docs` |
 
@@ -153,7 +155,11 @@ Das Datenbankschema wird beim Start automatisch angelegt und bei Updates migrier
 | Website & REST-API (`/api/...`) | `AUTH_ENABLED=True` → Familienpasswort (Basic) oder `MCP_API_TOKEN` als Bearer. Bei `False` ist alles offen. |
 | MCP (`/mcp`) | **Immer** geschützt, unabhängig von `AUTH_ENABLED`: OAuth-Login über `/mcp/login` oder statisches `MCP_API_TOKEN`. Ohne konfiguriertes Passwort/Token kommt niemand hinein. |
 
-> ⚠️ Mit `AUTH_ENABLED=False` kann jeder mit Kenntnis der URL Rezepte lesen, ändern und löschen und KI-Endpunkte auslösen, die dein Anthropic-Guthaben verbrauchen.
+| Browser-Update (`POST /api/system/update`) | Immer Passwortbestätigung mit `ADMIN_PASSWORD` (Fallback `AUTH_PASSWORD`); ohne Passwort deaktiviert |
+| KI-Endpunkte | Mengenbegrenzung pro IP und gesamt (`KI_LIMIT_*`), gilt für alle Worker |
+| Serverseitige URL-Abrufe | Nur http/https auf Port 80/443 zu öffentlichen Adressen; interne Netze, localhost und Metadaten-Adressen werden auch nach Weiterleitungen blockiert |
+
+> ⚠️ Mit `AUTH_ENABLED=False` kann jeder mit Kenntnis der URL Rezepte lesen, ändern und löschen. KI-Kosten sind durch die Limits gedeckelt. Das Frontend zeigt in diesem Modus keine Login-Maske (`GET /api/config`).
 
 ## MCP-Server
 

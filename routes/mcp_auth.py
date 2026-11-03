@@ -9,6 +9,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from mcp_server.oauth_provider import RezeptifyOAuthProvider
+from request_utils import client_ip, TRUSTED_PROXIES
 
 try:
     from config import AUTH_PASSWORD
@@ -20,22 +21,12 @@ except ImportError:
     MCP_LOGIN_PASSWORD = ""
 
 
-TRUSTED_PROXIES = {"127.0.0.1", "::1"}
-
 router = APIRouter()
 _attempts: dict[str, deque[float]] = defaultdict(deque)
 
 
 def _client_ip(request: Request) -> str:
-    host = request.client.host if request.client else "unknown"
-    if host in TRUSTED_PROXIES:
-        real_ip = request.headers.get("X-Real-IP", "").strip()
-        if real_ip:
-            return real_ip
-        forwarded = request.headers.get("X-Forwarded-For", "").split(",")[-1].strip()
-        if forwarded:
-            return forwarded
-    return host
+    return client_ip(request, trusted=TRUSTED_PROXIES)
 
 
 def _page(pending: str, error: bool = False) -> HTMLResponse:

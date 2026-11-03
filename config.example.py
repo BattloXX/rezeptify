@@ -26,6 +26,10 @@ ANTHROPIC_API_KEY = "sk-ant-DEIN-KEY-HIER"
 # claude-opus-4-6             → teuer   (~$0.10/Rezept)
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
+# KI-Aufrufe pro IP und Stunde bzw. insgesamt pro 24 Stunden; 0 = unbegrenzt.
+KI_LIMIT_PRO_IP_STUNDE = 30
+KI_LIMIT_GESAMT_TAG = 300
+
 # ── Authentifizierung ─────────────────────────────────────────────────────────
 AUTH_ENABLED  = True
 AUTH_PASSWORD = "DEIN_APP_PASSWORT"   # Nur Passwort, kein Benutzername nötig
@@ -37,7 +41,7 @@ MCP_API_TOKEN = ""
 MCP_LOGIN_PASSWORD = ""
 
 # ── CORS (Produktion: eigene Domain eintragen) ────────────────────────────────
-CORS_ORIGINS = ["*"]   # z.B. ["https://rezeptify.battlogg.at"]
+CORS_ORIGINS = ["https://rezeptify.battlogg.at"]   # Erlaubte Browser-Origin der eigenen Website
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 MAX_UPLOAD_MB  = 10
@@ -49,6 +53,8 @@ DEBUG     = False
 PUBLIC_BASE_URL = "https://rezeptify.battlogg.at"
 
 # ── Browser-Updates (nur serverseitig konfigurieren) ─────────────────────────
+# Passwort für Browser-Updates; leer = AUTH_PASSWORD, beide leer = Browser-Update deaktiviert.
+ADMIN_PASSWORD = ""
 # Diese Werte werden nie über eine HTTP-Anfrage entgegengenommen.
 UPDATE_GIT_REMOTE = "origin"
 UPDATE_GIT_BRANCH = "main"

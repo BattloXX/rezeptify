@@ -88,7 +88,7 @@ a { color: inherit; text-decoration: none; }
 /* ════════════════════════════════════════════════════
    LOGIN SCREEN
 ════════════════════════════════════════════════════ */
-#login-screen {
+#login-screen, #startup-error {
   display: none;
   position: fixed; inset: 0;
   background: var(--n-950);
@@ -96,7 +96,7 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   justify-content: center;
 }
-#login-screen.on { display: flex; }
+#login-screen.on, #startup-error.on { display: flex; }
 .login-card {
   background: var(--surface);
   border-radius: var(--r-xl);

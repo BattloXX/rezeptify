@@ -59,5 +59,6 @@ def client():
                 cur.execute("DELETE FROM kochhistorie")
                 cur.execute("DELETE FROM error_log")
                 cur.execute("DELETE FROM system_updates")
+                cur.execute("DELETE FROM ki_nutzung")
                 cur.execute("DELETE FROM rezepte")
         yield test_client
