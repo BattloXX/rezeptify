@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urljoin, urlparse
 
-import httpx
+from services.http_guard import safe_get
 
 from config import UPLOAD_DIR, MAX_UPLOAD_MB, ALLOWED_IMAGES
 
@@ -85,21 +85,20 @@ def download_image(img_url: str, base_url: str) -> Optional[str]:
             img_url = f"{parsed.scheme}://{parsed.netloc}{img_url}"
         elif not img_url.startswith("http"):
             img_url = urljoin(base_url, img_url)
-        with httpx.Client(follow_redirects=True, timeout=15.0,
-                          headers={"User-Agent": "Mozilla/5.0"}) as client:
-            resp = client.get(img_url)
-            if resp.status_code != 200:
-                return None
-            ct = resp.headers.get("content-type", "")
-            ext_map = {"image/jpeg": ".jpg", "image/png": ".png",
-                       "image/webp": ".webp", "image/gif": ".gif"}
-            ext = ext_map.get(ct.split(";")[0].strip())
-            if not ext:
-                url_ext = Path(urlparse(img_url).path).suffix.lower()
-                ext = url_ext if url_ext in {".jpg",".jpeg",".png",".webp",".gif"} else ".jpg"
-            if len(resp.content) > IMG_MAX_BYTE:
-                return None
-            return resize_and_save(resp.content, ext)
+        resp = safe_get(img_url, max_bytes=IMG_MAX_BYTE, timeout=15.0,
+                        headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code != 200:
+            return None
+        ct = resp.headers.get("content-type", "")
+        ext_map = {"image/jpeg": ".jpg", "image/png": ".png",
+                   "image/webp": ".webp", "image/gif": ".gif"}
+        ext = ext_map.get(ct.split(";")[0].strip())
+        if not ext:
+            url_ext = Path(urlparse(img_url).path).suffix.lower()
+            ext = url_ext if url_ext in {".jpg",".jpeg",".png",".webp",".gif"} else ".jpg"
+        if len(resp.content) > IMG_MAX_BYTE:
+            return None
+        return resize_and_save(resp.content, ext)
     except Exception:
         return None
 
@@ -128,15 +127,15 @@ def search_recipe_image(titel: str) -> Optional[str]:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept-Language": "de-DE,de;q=0.9",
         }
-        with httpx.Client(follow_redirects=True, timeout=15.0, headers=headers) as client:
-            resp = client.get("https://www.chefkoch.de/suche.php", params={"suche": titel.strip()})
-            matches = re.findall(r'href="(https://www\.chefkoch\.de/rezepte/\d+/[^"?#]+)"', resp.text)
-            if not matches:
-                return None
-            resp2 = client.get(matches[0])
-            img_url = extract_best_image(resp2.text[:30000], matches[0])
-            if img_url:
-                return download_image(img_url, matches[0])
+        resp = safe_get("https://www.chefkoch.de/suche.php", max_bytes=3*1024*1024,
+                        headers=headers, params={"suche": titel.strip()})
+        matches = re.findall(r'href="(https://www\.chefkoch\.de/rezepte/\d+/[^"?#]+)"', resp.text)
+        if not matches:
+            return None
+        resp2 = safe_get(matches[0], max_bytes=3*1024*1024, headers=headers)
+        img_url = extract_best_image(resp2.text[:30000], resp2.url)
+        if img_url:
+            return download_image(img_url, resp2.url)
     except Exception:
         pass
     return None

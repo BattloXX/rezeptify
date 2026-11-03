@@ -1,6 +1,6 @@
 import re, json, base64, uuid
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Request
 from config import CLAUDE_MODEL, MAX_UPLOAD_MB, UPLOAD_DIR
 from services.claude_service import (
     get_claude, check_api_key, parse_claude,
@@ -11,30 +11,34 @@ from services.image_service import (
 )
 from services.structured_recipe_service import parse_structured_recipe
 from auth import require_auth
-import httpx
+from services.rate_limit import enforce_ki_limit
+from services.http_guard import safe_get, UnsafeUrlError
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
 
 @router.post("/api/analysiere-url")
-def analysiere_url(body: dict):
+def analysiere_url(body: dict, request: Request):
     url = body.get("url", "").strip()
     if not url:
         raise HTTPException(400, "URL fehlt")
     check_api_key()
 
     try:
-        with httpx.Client(follow_redirects=True, timeout=20.0,
-                          headers={"User-Agent": "Mozilla/5.0"}) as client:
-            resp = client.get(url)
-            raw_html = resp.text
+        resp = safe_get(url, max_bytes=5*1024*1024, timeout=20.0,
+                        headers={"User-Agent": "Mozilla/5.0"})
+        raw_html = resp.text
+    except UnsafeUrlError:
+        raise HTTPException(400, "URL nicht erlaubt")
     except Exception as e:
         raise HTTPException(400, f"URL nicht abrufbar: {e}")
 
+    # Count the quota only once a page was fetched and Claude will really run.
+    enforce_ki_limit(request, "analysiere_url")
     downloaded_image = None
-    img_url = extract_best_image(raw_html[:30000], url)
+    img_url = extract_best_image(raw_html[:30000], resp.url)
     if img_url:
-        downloaded_image = download_image(img_url, url)
+        downloaded_image = download_image(img_url, resp.url)
 
     clean_text = clean_html(raw_html)
 
@@ -76,7 +80,7 @@ def analysiere_url(body: dict):
 
 
 @router.post("/api/analysiere-bild")
-async def analysiere_bild(file: UploadFile = File(...)):
+async def analysiere_bild(request: Request, file: UploadFile = File(...)):
     try:
         ext = Path(file.filename or "").suffix.lower()
         data = await file.read()
@@ -101,6 +105,7 @@ async def analysiere_bild(file: UploadFile = File(...)):
                 result["downloaded_image"] = image_name
             return result
 
+        enforce_ki_limit(request, "analysiere_bild")
         check_api_key()
 
         media_map = {".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".png":"image/png",
@@ -160,10 +165,11 @@ async def analysiere_bild(file: UploadFile = File(...)):
 
 
 @router.post("/api/rezept-suche")
-def rezept_suche(body: dict):
+def rezept_suche(body: dict, request: Request):
     anfrage = (body.get("anfrage") or body.get("query") or "").strip()
     if not anfrage:
         raise HTTPException(400, "Anfrage fehlt")
+    enforce_ki_limit(request, "rezept_suche")
     check_api_key()
 
     claude = get_claude()

@@ -55,6 +55,15 @@ async function responseError(response) {
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
 export async function api(path, opts = {}) {
+  try {
+    return await request(path, opts);
+  } catch (err) {
+    window.dispatchEvent(new CustomEvent('api:error', { detail: err }));
+    throw err;
+  }
+}
+
+async function request(path, opts) {
   const isForm = opts.body instanceof FormData;
   const headers = {
     ...(isForm ? {} : { 'Content-Type': 'application/json' }),
@@ -65,10 +74,14 @@ export async function api(path, opts = {}) {
   if (r.status === 401) {
     clearAuth();
     window.dispatchEvent(new CustomEvent('auth:required'));
-    throw new Error('Nicht autorisiert');
+    const err = new Error('Nicht autorisiert');
+    err.status = r.status;
+    throw err;
   }
   if (!r.ok) {
-    throw new Error(await responseError(r));
+    const err = new Error(await responseError(r));
+    err.status = r.status;
+    throw err;
   }
   return r.json();
 }
@@ -83,10 +96,14 @@ export async function apiFetch(path, opts = {}) {
   if (r.status === 401) {
     clearAuth();
     window.dispatchEvent(new CustomEvent('auth:required'));
-    throw new Error('Nicht autorisiert');
+    const err = new Error('Nicht autorisiert');
+    err.status = r.status;
+    throw err;
   }
   if (!r.ok) {
-    throw new Error(await responseError(r));
+    const err = new Error(await responseError(r));
+    err.status = r.status;
+    throw err;
   }
   return r.json();
 }

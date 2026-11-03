@@ -282,6 +282,7 @@ class _ProtectedMCPApp:
 
 async def _call_rest_app(scope, receive, send) -> None:
     from app import app as rest_app  # resolved lazily: app.py imports this module
+    scope = {**scope, "rezeptify_internal": True}
     await rest_app(scope, receive, send)
 
 

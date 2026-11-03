@@ -87,14 +87,18 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 try:
     from config import CORS_ORIGINS
 except ImportError:
-    CORS_ORIGINS = ["*"]
+    from config import PUBLIC_BASE_URL
+    CORS_ORIGINS = [PUBLIC_BASE_URL]
+
+def _cors_settings(origins):
+    return {"allow_origins": origins, "allow_credentials": "*" not in origins}
+
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    **_cors_settings(CORS_ORIGINS),
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=True,
 )
 app.add_middleware(MCPBarePathMiddleware)
 

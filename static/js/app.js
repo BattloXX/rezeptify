@@ -46,7 +46,10 @@ export function showView(name) {
 window.showView = showView;
 
 // ── Login screen ──────────────────────────────────────────────────────────────
+let authEnabled = null;
+
 function showLogin(errMsg = '') {
+  document.getElementById('startup-error').classList.remove('on');
   document.getElementById('app').style.display = 'none';
   const ls = document.getElementById('login-screen');
   ls.classList.add('on');
@@ -55,6 +58,7 @@ function showLogin(errMsg = '') {
 }
 
 function hideLogin() {
+  document.getElementById('startup-error').classList.remove('on');
   document.getElementById('login-screen').classList.remove('on');
   document.getElementById('app').style.display = '';
 }
@@ -67,11 +71,12 @@ async function doLogin() {
   try {
     setAuth(pwd);
     await api('/api/kategorien');
-    hideLogin();
     await initApp();
-  } catch {
+    hideLogin();
+  } catch (err) {
     clearAuth();
-    document.getElementById('login-err').textContent = 'Falsches Passwort';
+    showLogin(err.status === 401 ? 'Falsches Passwort' : 'Server nicht erreichbar: ' + err.message);
+  } finally {
     btn.disabled = false;
   }
 }
@@ -79,12 +84,59 @@ window.doLogin = doLogin;
 
 // ── App init ──────────────────────────────────────────────────────────────────
 async function initApp() {
-  await Promise.all([loadKats(), loadTags()]);
-  await loadGrid();
+  let loadError = null;
+  const captureError = event => { loadError ||= event.detail; };
+  window.addEventListener('api:error', captureError);
+  try {
+    await Promise.all([loadKats(), loadTags()]);
+    if (loadError) throw loadError;
+    await loadGrid();
+    if (loadError) throw loadError;
+  } finally {
+    window.removeEventListener('api:error', captureError);
+  }
   setupTagInp();
   setupClipboardPaste();
   registerServiceWorker();
   handleDeepLink();
+}
+
+function showStartupError(err) {
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').classList.remove('on');
+  document.getElementById('startup-error-message').textContent = err.message;
+  document.getElementById('startup-error').classList.add('on');
+}
+
+async function startup() {
+  const btn = document.getElementById('startup-retry-btn');
+  btn.disabled = true;
+  const hadAuth = hasAuth();
+  let configLoaded = false;
+  try {
+    const response = await fetch('/api/config');
+    if (response.status === 404) {
+      authEnabled = null;
+    } else {
+      if (!response.ok) throw new Error(`Server nicht erreichbar (HTTP ${response.status})`);
+      const config = await response.json();
+      if (typeof config?.auth_enabled !== 'boolean') throw new Error('Ungültige Serverkonfiguration');
+      authEnabled = config.auth_enabled;
+    }
+    configLoaded = true;
+    if (authEnabled === false) clearAuth();
+    else await api('/api/kategorien');
+    await initApp();
+    hideLogin();
+  } catch (err) {
+    if (configLoaded && authEnabled !== false && err.status === 401) {
+      showLogin(hadAuth ? 'Bitte erneut anmelden' : '');
+    } else {
+      showStartupError(err);
+    }
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function handleDeepLink() {
@@ -167,7 +219,10 @@ window.addEventListener('popstate', () => {
 });
 
 // ── Auth required event ───────────────────────────────────────────────────────
-window.addEventListener('auth:required', () => showLogin('Sitzung abgelaufen'));
+window.addEventListener('auth:required', () => {
+  if (authEnabled === false) toast('Nicht autorisiert', 'err');
+  else showLogin('Sitzung abgelaufen');
+});
 
 // ── Expose to global for inline onclick compatibility ─────────────────────────
 window.openNewForm   = openNewForm;
@@ -175,6 +230,7 @@ window.openEditForm  = openEditForm;
 
 // ── DOMContentLoaded ──────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('startup-retry-btn').addEventListener('click', startup);
   document.getElementById('login-pwd')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
   });
@@ -196,21 +252,5 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  if (!hasAuth()) {
-    // Try a test request — if 401 or no auth configured, show login
-    api('/api/kategorien').then(() => {
-      hideLogin();
-      initApp();
-    }).catch(() => {
-      showLogin();
-    });
-  } else {
-    // Already have stored credentials — validate them silently
-    api('/api/kategorien').then(() => {
-      hideLogin();
-      initApp();
-    }).catch(() => {
-      showLogin('Bitte erneut anmelden');
-    });
-  }
+  startup();
 });

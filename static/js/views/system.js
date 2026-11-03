@@ -24,6 +24,15 @@ export async function loadSystem() {
     el('system-db').textContent = health.database === 'ok' ? 'Datenbank erreichbar' : 'Datenbankfehler';
     el('system-db').classList.toggle('error', health.database !== 'ok');
   } catch { result('Systemstatus konnte nicht geladen werden.', true); }
+  try {
+    const response = await fetch('/api/config');
+    if (!response.ok) return;
+    const config = await response.json();
+    el('system-check-btn').disabled = config.update_im_browser === false;
+    if (config.update_im_browser === false) {
+      result('Update im Browser ist deaktiviert (ADMIN_PASSWORD in config.py setzen)');
+    }
+  } catch { /* Older servers may not expose configuration. */ }
 }
 
 export async function checkForUpdate() {
