@@ -77,7 +77,7 @@ rezeptify/
 ├── config.example.py       # Vorlage für config.py
 ├── requirements.txt        # Produktionsabhängigkeiten
 ├── requirements-dev.txt    # + Testabhängigkeiten
-├── wsgi.py                 # Alternativer Entry Point
+├── wsgi.py                 # Alternativer ASGI-Einstiegspunkt (kein WSGI)
 ├── VERSION                 # Aktuelle Version (Grundlage für Release/Update)
 ├── SETUP.md                # CloudPanel-Deployment-Anleitung
 ├── pytest.ini              # Root-Tests laufen nur unter tests/
@@ -180,7 +180,7 @@ neue Rezepte denselben Validierungsweg wie der JSON-Import.
 
 Details, Konfigurationsbeispiele und Hinweise stehen in [`mcp_server/README.md`](mcp_server/README.md).
 
-**nginx/CloudPanel:** Die OAuth-Discovery unter `/.well-known/oauth-*` muss an die App durchgereicht werden (sonst antwortet nginx mit 404 und claude.ai meldet „Autorisierung fehlgeschlagen"). Außerdem sollte `/mcp` ohne Response-Puffer laufen (`proxy_buffering off`).
+**nginx/CloudPanel:** OAuth-Discovery (`/.well-known/`), `/authorize`, `/token`, `/register`, `/revoke` sowie `/mcp` und `/mcp/login` an die App durchreichen. Für `/mcp`: `proxy_buffering off`, `proxy_read_timeout 300s`, HTTP/1.1; außerdem Client-IP-/Forwarded-Header und `Host` setzen, Upload-Limit `client_max_body_size 12m`. Zwei uvicorn-Worker sind möglich (Login-Sperre pro Worker, KI-Limit gemeinsam in MariaDB). Nach Updates/Neustarts `/api/health` einschließlich `mcp` und `status` prüfen. Vhost-Beispiel und Fehlerhilfe: [Reverse Proxy (nginx/CloudPanel)](SETUP.md#reverse-proxy-nginxcloudpanel). `wsgi:application` ist ein ASGI-Callable und muss mit uvicorn oder im uWSGI-ASGI-Modus laufen, niemals als WSGI.
 
 ## API-Endpunkte
 
@@ -238,7 +238,7 @@ GET    /api/tags                          Alle verwendeten Tags
 GET    /api/stats                         Statistiken
 
 System
-GET    /api/health                        Status, Version, DB (öffentlich)
+GET    /api/health                        Status, Version, DB, MCP, Schema-Version (öffentlich)
 GET    /api/system/update-log             Update-Protokoll (öffentlich, bereinigt)
 GET    /api/system/error-log              Fehlerprotokoll (öffentlich, bereinigt)
 GET    /api/system/update-check           Neuere Version verfügbar?
@@ -318,7 +318,7 @@ systemctl --user -M SITE-USER@ restart rezeptify
 
 ## Releases
 
-Jede Version hat einen Tag `vX.Y.Z` und ein GitHub-Release mit deutschen Release-Notes („Neu" / „Behoben"). Das Browser-Update orientiert sich am neuesten Release. Ablauf pro Änderung: Feature-Commit, danach ein eigener Commit `Bump version to X.Y.Z` (Datei `VERSION`), dann Tag und Release.
+Jede Version hat einen Tag `vX.Y.Z` und ein GitHub-Release mit deutschen Release-Notes („Neu" / „Behoben"). Das Browser-Update orientiert sich am neuesten Release. Ablauf pro Änderung: `VERSION` nach SemVer hochzählen, PR squash-mergen, danach GitHub Release `vX.Y.Z` anlegen; die Update-Prüfung liest `releases/latest`.
 
 ## Tests
 

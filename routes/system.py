@@ -107,6 +107,10 @@ def public_config():
 
 @public_router.get("/api/health")
 def health():
+    # Resolve lazily, like _app_version(), while app.py constructs routers.
+    from app import mcp_http_app
+
+    mcp = "ok" if mcp_http_app.app is not None else "error"
     database = "ok"
     try:
         with get_db() as conn:
@@ -115,8 +119,9 @@ def health():
                 cur.fetchone()
     except Exception:
         database = "error"
-    return {"status": "ok", "version": _app_version(), "database": database,
-            "schema_version": SCHEMA_VERSION}
+    status = "ok" if database == "ok" and mcp == "ok" else "degraded"
+    return {"status": status, "version": _app_version(), "database": database,
+            "mcp": mcp, "schema_version": SCHEMA_VERSION}
 
 
 @public_router.get("/api/system/update-log")

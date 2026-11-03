@@ -26,7 +26,7 @@ def test_health_is_public_and_has_no_sensitive_fields(client):
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["database"] == "ok"
-    assert set(response.json()) == {"status", "version", "database", "schema_version"}
+    assert set(response.json()) == {"status", "version", "database", "mcp", "schema_version"}
     assert system.public_router.dependencies == []
 
 
@@ -187,3 +187,33 @@ def test_no_release_response(client, monkeypatch):
     assert response.status_code == 200
     assert response.json()["neueste_version"] is None
     assert response.json()["update_verfuegbar"] is False
+
+
+def test_health_reports_running_mcp(client):
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["mcp"] == "ok"
+    assert response.json()["status"] == "ok"
+
+
+def test_health_reports_unavailable_mcp(client, monkeypatch):
+    from app import mcp_http_app
+
+    monkeypatch.setattr(mcp_http_app, "app", None)
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["mcp"] == "error"
+    assert response.json()["status"] == "degraded"
+
+
+def test_health_reports_unavailable_database(client, monkeypatch):
+    from routes import system
+
+    def unavailable_db():
+        raise RuntimeError("Database unavailable")
+
+    monkeypatch.setattr(system, "get_db", unavailable_db)
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["database"] == "error"
+    assert response.json()["status"] == "degraded"

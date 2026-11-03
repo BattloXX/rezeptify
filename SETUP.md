@@ -1,7 +1,8 @@
 # 🌿 Rezeptify – Setup-Anleitung für CloudPanel
 
 ## Voraussetzungen
-- CloudPanel mit Python 3.11 Unterstützung
+- CloudPanel mit Python 3.11 Unterstützung und MariaDB
+- `mysqldump` für die Sicherung vor Browser-Updates
 - Anthropic API Key: https://console.anthropic.com/settings/keys
 
 ---
@@ -31,18 +32,7 @@ cd /home/SITE-USER/htdocs/deine-domain.de
 cd ~/htdocs
 ```
 
-Alle Dateien aus diesem ZIP-Paket in das App-Verzeichnis hochladen:
-```
-app.py
-wsgi.py
-requirements.txt
-static/
-  index.html
-  manifest.json
-  sw.js
-  icons/
-uploads/          ← wird automatisch erstellt
-```
+Das vollständige Repository bereitstellen (einschließlich `routes/`, `services/`, `mcp_server/`, `static/`, `db.py` und `VERSION`), z. B. per Git-Checkout. Uploads liegen in `static/uploads/` und werden automatisch angelegt. Für Browser-Updates muss die Installation ein Git-Checkout mit konfiguriertem Remote sein.
 
 ---
 
@@ -58,45 +48,28 @@ pip install -r requirements.txt
 
 ---
 
-## Schritt 4: Umgebungsvariable setzen (API Key)
-
-In CloudPanel unter **Site → Environment Variables** ODER:
+## Schritt 4: Konfiguration
 
 ```bash
-# .env Datei anlegen (im App-Verzeichnis):
-echo "ANTHROPIC_API_KEY=sk-ant-DEIN-KEY-HIER" > .env
+cp config.example.py config.py
+nano config.py
 ```
 
-Dann in `app.py` oben ergänzen (falls .env-Datei verwendet):
-```python
-# Ganz oben nach den imports ergänzen:
-from dotenv import load_dotenv
-load_dotenv()
-```
-Und `python-dotenv` in requirements.txt hinzufügen.
-
-**Empfohlen: Direkt in CloudPanel als Environment Variable setzen**
-(Site → Python App → Environment Variables → ANTHROPIC_API_KEY)
+In der ungetrackten `config.py` die MariaDB-Verbindung (`DB_*`), `ANTHROPIC_API_KEY`, Auth-Passwörter und `PUBLIC_BASE_URL` eintragen. `CORS_ORIGINS` auf die eigene öffentliche Origin setzen. MariaDB-Datenbank und Benutzer müssen vorhanden sein; `init_db()` legt beim Start Tabellen an und migriert sie. Alle Schlüssel stehen in `config.example.py`.
 
 ---
 
-## Schritt 5: uWSGI / Startup konfigurieren
+## Schritt 5: ASGI-Startup konfigurieren
 
-In CloudPanel unter **Python App Konfiguration**:
+FastAPI benötigt einen ASGI-Server. CloudPanel muss den lokalen App-Port über nginx an diesen Prozess weiterleiten. Startbefehl (z. B. im systemd User Service `rezeptify`):
 
-- **Entry point / Module:** `app:app`
-- **WSGI-Datei:** `app.py`
-
-Wenn CloudPanel nach einer `wsgi.py` fragt:
-- **Module:** `wsgi:application`
-
-### Alternativ: Startup Command mit Uvicorn
-Falls CloudPanel einen Startbefehl erwartet:
 ```bash
 /home/SITE-USER/htdocs/deine-domain.de/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000 --workers 2
 ```
 
-MCP unter `/mcp` ist jetzt zustandslos und funktioniert auch mit mehreren Workern sowie nach Neustarts und längeren Leerlaufzeiten.
+Alternativ ist `wsgi:application` derselbe ASGI-Callable: mit uvicorn oder im uWSGI-ASGI-Modus starten, **nicht als WSGI**. Eine CloudPanel-Einstellung für reine WSGI-Anwendungen reicht dafür nicht.
+
+`uvicorn --workers 2` ist möglich: MCP nutzt `stateless_http=True` und braucht keine Sitzung im Worker. Die MCP-Login-Sperre zählt im Speicher pro Worker (effektiv Limit × Worker); das KI-Limit zählt in der Datenbank und gilt gemeinsam für alle Worker.
 
 ---
 
@@ -125,7 +98,7 @@ uvicorn app:app --host 127.0.0.1 --port 8000
 
 | Was | Wo |
 |-----|----|
-| Datenbank | `rezeptify.db` (im App-Verzeichnis, wird auto-erstellt) |
+| Datenbank | MariaDB gemäß `DB_*` in `config.py`; Tabellen werden beim Start angelegt/migriert |
 | Uploads | `static/uploads/` |
 | Logs | CloudPanel → Site → Logs |
 
@@ -161,9 +134,68 @@ GET    /api/stats                Statistiken
 ## Backup
 
 ```bash
-# Datenbank sichern:
-cp rezeptify.db rezeptify_backup_$(date +%Y%m%d).db
+# MariaDB sichern (Werte aus config.py einsetzen; -p fragt das Passwort ab):
+mysqldump --host=localhost --port=3306 --user=rezeptify -p --single-transaction rezeptify > rezeptify_backup.sql
 
 # Uploads sichern:
 tar -czf uploads_backup_$(date +%Y%m%d).tar.gz static/uploads/
 ```
+
+
+## Reverse Proxy (nginx/CloudPanel)
+
+Alle App-Pfade müssen am lokalen ASGI-Port ankommen. OAuth registriert am Domain-Root `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp` sowie `/authorize`, `/token`, `/register` und `/revoke`. Auch `/mcp` und `/mcp/login` müssen weitergereicht werden. Eine CloudPanel-Regel, die `/.well-known/` selbst beantwortet, verhindert die OAuth-Anmeldung.
+
+Beispiel für den CloudPanel-Vhost (innerhalb des bestehenden `server`-Blocks; vorhandene Locations zusammenführen/ersetzen, Port gegebenenfalls anpassen). Eine benötigte ACME-Challenge-Location beibehalten; sie darf die OAuth-Discovery nicht abfangen:
+
+```nginx
+client_max_body_size 12m;
+
+location ^~ /.well-known/ {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host;
+}
+
+location ^~ /mcp {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+    proxy_http_version 1.1;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host;
+}
+
+# Schließt /authorize, /token, /register, /revoke und /api/health ein.
+location / {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host;
+}
+```
+
+`request_utils.TRUSTED_PROXIES` vertraut standardmäßig nur `127.0.0.1` und `::1`. `X-Real-IP` muss die tatsächliche Client-IP enthalten. Fehlen nutzbare IP-Header, sehen Login-Sperre und KI-Limit bei lokalem Proxy alle Nutzer als `127.0.0.1`; ohne `X-Real-IP` wird ersatzweise der letzte Eintrag aus `X-Forwarded-For` verwendet. Bei einem anderen Proxy-Absender muss die Vertrauensliste zur Installation passen.
+
+`client_max_body_size 12m;` erlaubt `MAX_UPLOAD_MB=10` plus Multipart-Overhead. Ein kleineres nginx-Limit kann Uploads bereits mit HTTP 413 abweisen, bevor die App sie erhält; die Fehlermeldung im Frontend verweist darauf.
+
+Für Monitoring und nach jedem Update/Neustart `GET /api/health` prüfen: `version`, `database`, `mcp`, `status`, `schema_version`. Nur wenn Datenbank und MCP bereit sind, ist `status` gleich `ok`, sonst `degraded`. HTTP bleibt auch bei `degraded` auf 200; Monitoring muss das JSON auswerten.
+
+```bash
+systemctl --user restart rezeptify
+journalctl --user -u rezeptify -f
+journalctl --user -u rezeptify | grep "MCP "
+curl -sS https://deine-domain.de/api/health
+```
+
+| Problem | Prüfen |
+|---------|--------|
+| MCP 401 | Token, `MCP_LOGIN_PASSWORD` (Fallback `AUTH_PASSWORD`) und `PUBLIC_BASE_URL` prüfen. `journalctl --user -u rezeptify \| grep "MCP "` zeigt jede abgelehnte Anfrage am MCP-Endpunkt mit Status und `auth=none` oder `auth=bearer`. |
+| „Autorisierung fehlgeschlagen“ in claude.ai | Wird `/.well-known/` an die App durchgereicht? Discovery muss JSON liefern. |
+| Browser-Update deaktiviert | `ADMIN_PASSWORD` fehlt und `AUTH_PASSWORD` ist ebenfalls leer. |
+| 429 bei KI | `KI_LIMIT_PRO_IP_STUNDE` / `KI_LIMIT_GESAMT_TAG` erreicht; auf Ablauf des Zeitfensters warten oder Limits in `config.py` anpassen. |
