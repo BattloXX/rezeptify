@@ -20,8 +20,22 @@ except ImportError:
     MCP_LOGIN_PASSWORD = ""
 
 
+TRUSTED_PROXIES = {"127.0.0.1", "::1"}
+
 router = APIRouter()
 _attempts: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    host = request.client.host if request.client else "unknown"
+    if host in TRUSTED_PROXIES:
+        real_ip = request.headers.get("X-Real-IP", "").strip()
+        if real_ip:
+            return real_ip
+        forwarded = request.headers.get("X-Forwarded-For", "").split(",")[-1].strip()
+        if forwarded:
+            return forwarded
+    return host
 
 
 def _page(pending: str, error: bool = False) -> HTMLResponse:
@@ -55,18 +69,21 @@ async def login_page(pending: str = ""):
 
 @router.post("/mcp/login", response_class=HTMLResponse)
 async def login_submit(request: Request, pending: str = Form(""), password: str = Form("")):
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     now = time.monotonic()
     attempts = _attempts[ip]
-    while attempts and now - attempts[0] > 60:
-        attempts.popleft()
-    if len(attempts) >= 5:
+    global_attempts = _attempts["__global__"]
+    for window in (attempts, global_attempts):
+        while window and now - window[0] > 60:
+            window.popleft()
+    if len(attempts) >= 5 or len(global_attempts) >= 30:
         await asyncio.sleep(1)
         return _page(pending, error=True)
     effective_password = _effective_password()
     if (not effective_password
             or not secrets.compare_digest(password.encode(), effective_password.encode())):
         attempts.append(now)
+        global_attempts.append(now)
         await asyncio.sleep(0.2)
         return _page(pending, error=True)
     redirect_url = await _provider().complete_login(pending)

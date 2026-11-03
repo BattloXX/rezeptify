@@ -245,6 +245,7 @@ def init_db():
                     subject VARCHAR(255) NULL,
                     expires_at DATETIME NULL,
                     revoked TINYINT(1) NOT NULL DEFAULT 0,
+                    rotated_at DATETIME NULL,
                     linked_token_hash CHAR(64) NULL,
                     erstellt_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_mcp_oauth_tokens_client (client_id),
@@ -287,6 +288,15 @@ def init_db():
                 if cur.fetchone()["n"] == 0:
                     cur.execute(f"ALTER TABLE rezepte {alter}")
             conn.commit()
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='mcp_oauth_tokens' AND COLUMN_NAME='rotated_at'
+            """)
+            if cur.fetchone()["n"] == 0:
+                cur.execute("ALTER TABLE mcp_oauth_tokens ADD COLUMN rotated_at DATETIME NULL AFTER revoked")
+        conn.commit()
 
         # Backfill missing slugs
         with conn.cursor() as cur:

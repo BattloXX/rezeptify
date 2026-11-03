@@ -96,6 +96,8 @@ Falls CloudPanel einen Startbefehl erwartet:
 /home/SITE-USER/htdocs/deine-domain.de/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000 --workers 2
 ```
 
+MCP unter `/mcp` ist jetzt zustandslos und funktioniert auch mit mehreren Workern sowie nach Neustarts und längeren Leerlaufzeiten.
+
 ---
 
 ## Schritt 6: Uploads-Ordner Berechtigungen
