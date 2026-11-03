@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -19,9 +20,18 @@ except ImportError:
     PUBLIC_BASE_URL = "https://rezeptify.battlogg.at"
 
 
-ACCESS_TOKEN_SECONDS = 3600
-REFRESH_TOKEN_SECONDS = 60 * 60 * 24 * 30
+logger = logging.getLogger(__name__)
+
+ACCESS_TOKEN_SECONDS = 24 * 3600
+REFRESH_TOKEN_SECONDS = 90 * 24 * 3600
+REFRESH_GRACE_SECONDS = 120
 AUTH_CODE_SECONDS = 300
+
+
+def _default_resource() -> str:
+    import config
+    base_url = getattr(config, "PUBLIC_BASE_URL", PUBLIC_BASE_URL)
+    return f"{base_url.rstrip('/')}/mcp"
 
 
 def _epoch(value: datetime) -> int:
@@ -81,7 +91,7 @@ class RezeptifyOAuthProvider:
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""", (
                         pending_id, client.client_id, str(params.redirect_uri),
                         params.redirect_uri_provided_explicitly, params.code_challenge,
-                        " ".join(params.scopes or []), params.resource, params.state,
+                        " ".join(params.scopes or []), params.resource or _default_resource(), params.state,
                         datetime.utcnow() + timedelta(seconds=AUTH_CODE_SECONDS),
                     ))
         await self._run(insert)
@@ -133,9 +143,14 @@ class RezeptifyOAuthProvider:
         return AuthorizationCode(code=authorization_code, client_id=row["client_id"],
             redirect_uri=AnyHttpUrl(row["redirect_uri"]), redirect_uri_provided_explicitly=bool(row["redirect_uri_explicit"]),
             code_challenge=row["code_challenge"], scopes=(row["scope"] or "").split(),
-            resource=row["resource"], subject=row["subject"], expires_at=_epoch(row["expires_at"]))
+            resource=row["resource"] or _default_resource(), subject=row["subject"], expires_at=_epoch(row["expires_at"]))
 
     async def _issue_tokens(self, client_id: str, scopes: list[str], resource: str | None, subject: str | None) -> OAuthToken:
+        try:
+            await self._run(self.cleanup_expired)
+        except Exception:
+            logger.exception("OAuth cleanup failed during token issuance")
+        resource = resource or _default_resource()
         access, refresh = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         access_hash, refresh_hash = _hash(access), _hash(refresh)
 
@@ -168,20 +183,30 @@ class RezeptifyOAuthProvider:
             with get_db() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""SELECT * FROM mcp_oauth_tokens WHERE token_hash=%s AND token_type='refresh'
-                        AND revoked=0 AND (expires_at IS NULL OR expires_at > UTC_TIMESTAMP())""", (_hash(refresh_token),))
+                        AND (revoked=0 OR rotated_at > UTC_TIMESTAMP() - INTERVAL %s SECOND)
+                        AND (expires_at IS NULL OR expires_at > UTC_TIMESTAMP())""", (_hash(refresh_token), REFRESH_GRACE_SECONDS))
                     return cur.fetchone()
         row = await self._run(query)
         if not row:
             return None
         return RefreshToken(token=refresh_token, client_id=row["client_id"], scopes=(row["scope"] or "").split(),
-                            resource=row["resource"], subject=row["subject"], expires_at=_epoch(row["expires_at"]) if row["expires_at"] else None)
+                            resource=row["resource"] or _default_resource(), subject=row["subject"], expires_at=_epoch(row["expires_at"]) if row["expires_at"] else None)
 
     async def exchange_refresh_token(self, client, refresh_token: RefreshToken, scopes: list[str]) -> OAuthToken:
         def revoke():
             with get_db() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("UPDATE mcp_oauth_tokens SET revoked=1 WHERE token_hash=%s AND revoked=0", (_hash(refresh_token.token),))
-                    return cur.rowcount == 1
+                    cur.execute("""UPDATE mcp_oauth_tokens SET revoked=1, rotated_at=UTC_TIMESTAMP()
+                        WHERE token_hash=%s AND revoked=0 AND token_type='refresh'
+                        AND (expires_at IS NULL OR expires_at > UTC_TIMESTAMP())""", (_hash(refresh_token.token),))
+                    if cur.rowcount == 1:
+                        return True
+                    cur.execute("""SELECT token_hash FROM mcp_oauth_tokens WHERE token_hash=%s
+                        AND token_type='refresh' AND rotated_at IS NOT NULL
+                        AND rotated_at > UTC_TIMESTAMP() - INTERVAL %s SECOND
+                        AND (expires_at IS NULL OR expires_at > UTC_TIMESTAMP())""",
+                        (_hash(refresh_token.token), REFRESH_GRACE_SECONDS))
+                    return cur.fetchone() is not None
         if not await self._run(revoke):
             raise TokenError("invalid_grant", "refresh token is no longer valid")
         return await self._issue_tokens(client.client_id, scopes, refresh_token.resource, refresh_token.subject)
@@ -190,7 +215,7 @@ class RezeptifyOAuthProvider:
         if (mcp_auth.MCP_API_TOKEN
                 and secrets.compare_digest(token.encode(), mcp_auth.MCP_API_TOKEN.encode())):
             return AccessToken(token=token, client_id="rezeptify-mcp-static", scopes=[],
-                               resource=f"{PUBLIC_BASE_URL.rstrip('/')}/mcp")
+                               resource=_default_resource())
         def query():
             with get_db() as conn:
                 with conn.cursor() as cur:
@@ -201,8 +226,18 @@ class RezeptifyOAuthProvider:
         if not row:
             return None
         return AccessToken(token=token, client_id=row["client_id"], scopes=(row["scope"] or "").split(),
-                           resource=row["resource"], subject=row["subject"],
+                           resource=row["resource"] or _default_resource(), subject=row["subject"],
                            expires_at=_epoch(row["expires_at"]) if row["expires_at"] else None)
+
+    def cleanup_expired(self) -> None:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM mcp_oauth_pending WHERE expires_at < UTC_TIMESTAMP()")
+                cur.execute("DELETE FROM mcp_oauth_auth_codes WHERE expires_at < UTC_TIMESTAMP()")
+                cur.execute("""DELETE FROM mcp_oauth_tokens
+                    WHERE expires_at < UTC_TIMESTAMP() - INTERVAL 1 DAY
+                    OR (revoked=1 AND (rotated_at IS NULL OR rotated_at < UTC_TIMESTAMP() - INTERVAL 1 DAY)
+                        AND erstellt_am < UTC_TIMESTAMP() - INTERVAL 1 DAY)""")
 
     async def revoke_token(self, token) -> None:
         token_hash = _hash(token.token)
@@ -211,7 +246,7 @@ class RezeptifyOAuthProvider:
                 with conn.cursor() as cur:
                     cur.execute("SELECT linked_token_hash FROM mcp_oauth_tokens WHERE token_hash=%s", (token_hash,))
                     row = cur.fetchone()
-                    cur.execute("UPDATE mcp_oauth_tokens SET revoked=1 WHERE token_hash=%s", (token_hash,))
+                    cur.execute("UPDATE mcp_oauth_tokens SET revoked=1, rotated_at=NULL WHERE token_hash=%s", (token_hash,))
                     if row and row["linked_token_hash"]:
-                        cur.execute("UPDATE mcp_oauth_tokens SET revoked=1 WHERE token_hash=%s", (row["linked_token_hash"],))
+                        cur.execute("UPDATE mcp_oauth_tokens SET revoked=1, rotated_at=NULL WHERE token_hash=%s", (row["linked_token_hash"],))
         await self._run(revoke)

@@ -20,7 +20,7 @@ class RezeptifyClient:
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {api_token}"},
-            timeout=20.0,
+            timeout=httpx.Timeout(60.0, connect=10.0),
             transport=transport,
         )
 

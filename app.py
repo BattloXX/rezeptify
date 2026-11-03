@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from config import BASE_DIR, UPLOAD_DIR, APP_TITLE, DEBUG
 from db import get_db, init_db
 from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system, mcp_auth
-from mcp_server.server import build_production_http_app
+from mcp_server.server import build_production_http_app, get_production_oauth_provider
 
 logger = logging.getLogger(__name__)
 mcp_http_app = build_production_http_app()
@@ -44,6 +44,11 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 async def lifespan(app: FastAPI):
     async with mcp_http_app.lifespan():
         init_db()
+        try:
+            provider = get_production_oauth_provider()
+            await provider._run(provider.cleanup_expired)
+        except Exception:
+            logger.exception("OAuth cleanup failed during startup")
         # Reaching startup after systemctl proves the requested restart completed.
         from db import get_db
         with get_db() as conn:

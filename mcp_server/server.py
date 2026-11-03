@@ -3,6 +3,7 @@ import functools
 import logging
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlparse
@@ -12,8 +13,11 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.auth.routes import create_auth_routes, create_protected_resource_routes
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.server.auth.settings import AuthSettings
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from mcp_server.client import RezeptifyClient
 from mcp_server.oauth_provider import RezeptifyOAuthProvider
@@ -25,11 +29,15 @@ logger = logging.getLogger(__name__)
 
 
 def _logged(fn):
-    """Log tool failures with their traceback and always return a readable message."""
+    """Log tool duration on success and failures with a readable message."""
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
+        started = time.monotonic()
         try:
-            return await fn(*args, **kwargs)
+            result = await fn(*args, **kwargs)
+            logger.info("MCP-Tool %s ok in %.0f ms", fn.__name__,
+                        (time.monotonic() - started) * 1000)
+            return result
         except Exception as exc:
             logger.exception("MCP-Tool %s fehlgeschlagen", fn.__name__)
             raise RuntimeError(f"{type(exc).__name__}: {exc}") from exc
@@ -46,7 +54,8 @@ class Ingredient(BaseModel):
 def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -> None:
     """Register the common recipe tools for both MCP transports."""
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
     @_logged
     async def add_recipe(
         title: str,
@@ -91,14 +100,22 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
             "titel": recipe["titel"],
         }
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     @_logged
     async def search_recipes(
         query: str = "", category: str = "", tag: str = "", limit: int = 10
     ) -> list[dict]:
+        """Search titles and descriptions with optional category and tag filters.
+
+        Return id, titel, slug, kategorie and tags; limit is clamped to 1..200.
+        Use before add_recipe to check for duplicates.
+        """
+        limit = max(1, min(limit, 200))
         return await client.search_recipes(query, category, tag, limit)
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     @_logged
     async def get_recipe(recipe_id: int) -> dict:
         """Read a complete recipe before changing it.
@@ -110,7 +127,8 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         recipe["url"] = f"{base_url.rstrip('/')}/rezept/{recipe['slug']}"
         return recipe
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     @_logged
     async def update_recipe(
         recipe_id: int,
@@ -156,14 +174,18 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         recipe["url"] = f"{base_url.rstrip('/')}/rezept/{recipe['slug']}"
         return recipe
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     @_logged
     async def list_categories() -> list[str]:
+        """List available recipe categories for searching and organizing recipes."""
         return await client.list_categories()
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     @_logged
     async def list_tags() -> list[str]:
+        """List available recipe tags for searching and labeling recipes."""
         return await client.list_tags()
 
 
@@ -197,7 +219,9 @@ def create_http_asgi_app(
     _register_tools(server, client, base_url)
     # This Starlette app is mounted at /mcp by app.py, so its own route must be
     # / for the externally visible endpoint to remain exactly /mcp.
-    return server.streamable_http_app(streamable_http_path="/", host=urlparse(base_url).hostname or "127.0.0.1")
+    # Stateless requests work across multiple workers and restarts without
+    # depending on in-memory sessions or their idle timeout.
+    return server.streamable_http_app(streamable_http_path="/", host=urlparse(base_url).hostname or "127.0.0.1", stateless_http=True, json_response=True)
 
 
 class _ProtectedMCPApp:
@@ -212,9 +236,30 @@ class _ProtectedMCPApp:
         self.app: Starlette | None = None
 
     async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            if self.app is None:
+                raise RuntimeError("MCP-Anwendung wurde noch nicht gestartet")
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
+        auth_kind = "bearer" if request.headers.get("authorization", "").lower().startswith("bearer ") else "none"
+        has_session_id = "mcp-session-id" in request.headers
+        user_agent = request.headers.get("user-agent", "")
+
+        async def logged_send(message):
+            if message["type"] == "http.response.start":
+                status = message["status"]
+                log = logger.warning if status >= 400 else logger.debug
+                log("MCP %s %s -> %s (auth=%s, session=%s, ua=%s)",
+                    request.method, request.url.path, status, auth_kind,
+                    has_session_id, user_agent[:80])
+            await send(message)
+
         if self.app is None:
-            raise RuntimeError("MCP-Anwendung wurde noch nicht gestartet")
-        await self.app(scope, receive, send)
+            await JSONResponse({"error": "mcp_unavailable"}, status_code=503)(scope, receive, logged_send)
+            return
+        await self.app(scope, receive, logged_send)
 
     @asynccontextmanager
     async def lifespan(self):
