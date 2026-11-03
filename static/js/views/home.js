@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { toast, x, EM, optimisticToggle, renderCardStars } from '../utils.js';
+import { toast, x, safeImageUrl, EM, optimisticToggle, renderCardStars } from '../utils.js';
 import { S } from '../app.js';
 import { openDetail } from './detail.js';
 
@@ -108,21 +108,21 @@ function renderGrid() {
 function renderRecipeCards(recipes, compact = false) {
   return recipes.map(r => {
     const em       = EM[r.kategorie] || '🍴';
-    const img      = r.haupt_bild || r.bilder?.[0]?.url;
+    const img      = safeImageUrl(r.haupt_bild || r.bilder?.[0]?.url);
     const thumb    = img
       ? `<img src="${x(img)}" alt="" loading="lazy" onerror="this.style.display='none'">`
       : `<span class="card-thumb-emoji">${em}</span>`;
     const imgCount = r.bilder?.length || 0;
-    const gz       = (r.zeit_vorb||0) + (r.zeit_koch||0);
+    const gz       = (Number(r.zeit_vorb)||0) + (Number(r.zeit_koch)||0);
     const badge    = r.quelle_typ && r.quelle_typ !== 'manuell'
       ? `<span class="card-badge">${x(r.quelle_typ)}</span>` : '';
     const countBadge = imgCount > 1
       ? `<span class="card-img-count"><span class="material-symbols-outlined">photo_library</span>${imgCount}</span>` : '';
     const kcalHtml = r.kalorien_pro_portion
-      ? `<span class="card-meta-i card-kcal">${r.kalorien_pro_portion} <span style="font-weight:400;font-size:0.9em">kcal</span></span>` : '';
-    return `<article class="card${compact ? ' history-card' : ''}" data-id="${r.id}" onclick="openDetail(${r.id})">
+      ? `<span class="card-meta-i card-kcal">${Number(r.kalorien_pro_portion)} <span style="font-weight:400;font-size:0.9em">kcal</span></span>` : '';
+    return `<article class="card${compact ? ' history-card' : ''}" data-id="${Number(r.id)}" onclick="openDetail(${Number(r.id)})">
       <div class="card-thumb">${thumb}${badge}${countBadge}
-        <button class="card-favorite${r.favorit ? ' on' : ''}" aria-label="${r.favorit ? 'Favorit entfernen' : 'Als Favorit markieren'}" onclick="toggleFavorite(event,${r.id})">${r.favorit ? '♥' : '♡'}</button>
+        <button class="card-favorite${r.favorit ? ' on' : ''}" aria-label="${r.favorit ? 'Favorit entfernen' : 'Als Favorit markieren'}" onclick="toggleFavorite(event,${Number(r.id)})">${r.favorit ? '♥' : '♡'}</button>
         <div class="card-hover-overlay">
           <span class="card-hover-label">Öffnen</span>
           <span class="material-symbols-outlined card-hover-arrow">arrow_forward</span>
@@ -133,7 +133,7 @@ function renderRecipeCards(recipes, compact = false) {
         <div class="card-title">${x(r.titel)}</div>
         <div class="card-meta">
           ${gz ? `<span class="card-meta-i"><span class="material-symbols-outlined">schedule</span>${gz} min</span>` : ''}
-          ${r.portionen ? `<span class="card-meta-i"><span class="material-symbols-outlined">group</span>${r.portionen}</span>` : ''}
+          ${r.portionen ? `<span class="card-meta-i"><span class="material-symbols-outlined">group</span>${Number(r.portionen)}</span>` : ''}
           ${kcalHtml}
         </div>
         ${r.schwierigkeit ? `<span class="diff-tag ${x(r.schwierigkeit)}">${x(r.schwierigkeit)}</span>` : ''}

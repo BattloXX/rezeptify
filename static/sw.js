@@ -1,4 +1,4 @@
-const CACHE = 'rezeptify-v5';
+const CACHE = 'rezeptify-v6';
 const SHELL = [
   '/',
   '/static/manifest.json',
@@ -12,10 +12,16 @@ const SHELL = [
   '/static/js/views/import.js',
   '/static/js/views/buch.js',
   '/static/js/views/bot.js',
+  '/static/js/views/einkauf.js',
+  '/static/js/views/error-log.js',
+  '/static/js/views/kochmodus.js',
+  '/static/js/views/system.js',
+  '/static/js/views/update-log.js',
+  '/static/js/views/wochenplan.js',
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)));
+  e.waitUntil(caches.open(CACHE).then(cache => Promise.allSettled(SHELL.map(u => cache.add(u)))));
   self.skipWaiting();
 });
 
@@ -28,6 +34,7 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return;
 
   // Never cache API calls or uploads
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/static/uploads/')) {

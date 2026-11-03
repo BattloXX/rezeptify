@@ -1,5 +1,5 @@
 import { api, apiFetch } from '../api.js';
-import { askImageUrl, toast, x, EM, optimisticToggle, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
+import { askImageUrl, toast, x, safeUrl, safeImageUrl, EM, optimisticToggle, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
 import { S } from '../app.js';
 import { loadGrid } from './home.js';
 import { openEditForm } from './form.js';
@@ -25,7 +25,7 @@ export function renderDetail(r) {
   const emojiEl = document.getElementById('d-emoji');
   const grad    = document.getElementById('d-grad');
   emojiEl.textContent = em;
-  const mainBild = r.haupt_bild || r.bilder?.[0]?.url;
+  const mainBild = safeImageUrl(r.haupt_bild || r.bilder?.[0]?.url);
   if (mainBild) {
     emojiEl.style.display = 'none';
     const img = Object.assign(document.createElement('img'), {
@@ -38,24 +38,25 @@ export function renderDetail(r) {
     emojiEl.style.display = '';
     grad.style.display = 'none';
   }
-  portionState.base    = r.portionen || 4;
-  portionState.current = r.portionen || 4;
+  portionState.base    = Number(r.portionen) || 4;
+  portionState.current = Number(r.portionen) || 4;
   renderThumbs(r);
   buildDetailBody(r);
 }
 
 function buildDetailBody(r) {
-  const gz   = (r.zeit_vorb||0) + (r.zeit_koch||0);
+  const gz   = (Number(r.zeit_vorb)||0) + (Number(r.zeit_koch)||0);
   const tags = (r.tags||[]).map(t =>
-    `<span class="tag-pill" onclick="filterByTag('${x(t)}')">${x(t)}</span>`
+    `<span class="tag-pill" data-tag="${x(t)}">${x(t)}</span>`
   ).join('');
-  const src = r.quelle_url
-    ? `<a class="source-link" href="${x(r.quelle_url)}" target="_blank" rel="noopener">
+  const sourceUrl = safeUrl(r.quelle_url);
+  const src = sourceUrl
+    ? `<a class="source-link" href="${x(sourceUrl)}" target="_blank" rel="noopener">
         <span class="material-symbols-outlined">open_in_new</span>
         Originalquelle (${x(r.quelle_typ||'Web')})</a>` : '';
-  const quelldatei = r.quelldatei
-    ? `<a class="source-link" href="/static/uploads/${x(r.quelldatei)}" target="_blank"
-          style="margin-left:${r.quelle_url ? '8px' : '0'}">
+  const quelldatei = r.quelldatei && !/[\/\\]/.test(r.quelldatei) && !['.', '..'].includes(r.quelldatei)
+    ? `<a class="source-link" href="/static/uploads/${x(encodeURIComponent(r.quelldatei))}" target="_blank"
+          style="margin-left:${sourceUrl ? '8px' : '0'}">
         <span class="material-symbols-outlined">${r.quelldatei.endsWith('.pdf') ? 'picture_as_pdf' : 'image'}</span>
         Quelldatei ${r.quelldatei.endsWith('.pdf') ? '(PDF)' : '(Bild)'}</a>` : '';
   const portionenBar = (r.portionen||0) > 0 ? `
@@ -69,14 +70,21 @@ function buildDetailBody(r) {
       <span class="portion-base">Original: ${portionState.base}</span>
     </div>` : '';
 
-  document.getElementById('d-body').innerHTML = `
+  const body = document.getElementById('d-body');
+  body.onclick = event => {
+    const tag = event.target.closest('[data-tag]');
+    if (tag && body.contains(tag)) { window.filterByTag(tag.dataset.tag); return; }
+    const button = event.target.closest('[data-copy]');
+    if (button && body.contains(button)) copyZutat(button, button.dataset.copy);
+  };
+  body.innerHTML = `
     ${r.kategorie ? `<div class="d-category">${x(r.kategorie)}</div>` : ''}
     <h2 class="d-title">${x(r.titel)}</h2>
     <div class="d-meta">
       ${gz ? `<span class="d-meta-pill"><span class="material-symbols-outlined">schedule</span>${gz} Min.</span>` : ''}
-      ${r.portionen ? `<span class="d-meta-pill" id="meta-portionen"><span class="material-symbols-outlined">group</span>${r.portionen} Portionen</span>` : ''}
-      ${r.kalorien_pro_portion ? `<span class="d-meta-pill" id="meta-kalorien"><span class="material-symbols-outlined">local_fire_department</span>${r.kalorien_pro_portion} kcal<small style="font-weight:400;opacity:0.7;font-size:0.85em"> / Port.</small></span>` : ''}
-      ${r.zeit_vorb ? `<span class="d-meta-pill">Vorb. ${r.zeit_vorb} Min.</span>` : ''}
+      ${r.portionen ? `<span class="d-meta-pill" id="meta-portionen"><span class="material-symbols-outlined">group</span>${Number(r.portionen)} Portionen</span>` : ''}
+      ${r.kalorien_pro_portion ? `<span class="d-meta-pill" id="meta-kalorien"><span class="material-symbols-outlined">local_fire_department</span>${Number(r.kalorien_pro_portion)} kcal<small style="font-weight:400;opacity:0.7;font-size:0.85em"> / Port.</small></span>` : ''}
+      ${r.zeit_vorb ? `<span class="d-meta-pill">Vorb. ${Number(r.zeit_vorb)} Min.</span>` : ''}
       ${r.schwierigkeit ? `<span class="diff-tag ${x(r.schwierigkeit)}" style="margin:0">${x(r.schwierigkeit)}</span>` : ''}
     </div>
     ${r.beschreibung ? `<p class="d-desc">${x(r.beschreibung)}</p>` : ''}
@@ -89,7 +97,7 @@ function buildDetailBody(r) {
     </div>
     <div class="cook-history" id="cook-history">${renderCookHistory(r)}</div>
     <div class="detail-actions">
-      <button class="act-btn act-btn-cook" onclick="startKochmodus(${r.id})">
+      <button class="act-btn act-btn-cook" onclick="startKochmodus(${Number(r.id)})">
         <span class="material-symbols-outlined">skillet</span>Jetzt kochen
       </button>
       <button class="act-btn" onclick="shareRezept()" id="btn-share">
@@ -125,11 +133,11 @@ function renderIngredients(zutaten, current, base) {
   return zutaten.map(z => {
     if (z.gruppe) return `<li class="ing-group-header">${x(z.gruppe)}</li>`;
     const scaled   = scaleAmount(z.menge || '', factor);
-    const copyText = [scaled, x(z.einheit||''), x(z.name)].filter(Boolean).join(' ');
+    const copyText = [scaled, z.einheit||'', z.name].filter(Boolean).join(' ');
     return `<li class="ing-row">
-      <span class="ing-amount">${scaled} ${x(z.einheit||'')}</span>
+      <span class="ing-amount">${x(scaled)} ${x(z.einheit||'')}</span>
       <span class="ing-name">${x(z.name)}</span>
-      <button class="ing-copy" onclick="copyZutat(this,'${copyText.replace(/'/g,"&#39;")}')">
+      <button class="ing-copy" data-copy="${x(copyText)}">
         <span class="material-symbols-outlined">content_copy</span>
       </button>
     </li>`;
@@ -204,7 +212,7 @@ window.resetStarPreview = resetStarPreview;
 
 function renderCookHistory(r) {
   const last = r.zuletzt_gekocht ? new Date(r.zuletzt_gekocht).toLocaleDateString('de-AT') : 'Noch nicht gekocht';
-  return `<span>Zuletzt gekocht: <strong>${last}</strong></span><span>Insgesamt gekocht: <strong>${r.anzahl_gekocht || 0}×</strong></span>`;
+  return `<span>Zuletzt gekocht: <strong>${last}</strong></span><span>Insgesamt gekocht: <strong>${Number(r.anzahl_gekocht) || 0}×</strong></span>`;
 }
 
 async function toggleDetailFavorite() {
@@ -347,24 +355,24 @@ function exportPDF() {
   if (!S.current) return;
   const r      = S.current;
   const factor = portionState.base > 0 ? portionState.current / portionState.base : 1;
-  const gz     = (r.zeit_vorb||0) + (r.zeit_koch||0);
+  const gz     = (Number(r.zeit_vorb)||0) + (Number(r.zeit_koch)||0);
   const meta   = [r.kategorie, gz ? gz+' Min.' : null, portionState.current+' Portionen', r.schwierigkeit].filter(Boolean).join(' · ');
   const ings   = (r.zutaten||[]).map(z => z.gruppe
     ? '<div class="print-ing print-ing-group">' + x(z.gruppe) + '</div>'
-    : '<div class="print-ing"><span class="print-ing-amt">' + scaleAmount(z.menge||'', factor) + ' ' + x(z.einheit||'') + '</span><span>' + x(z.name) + '</span></div>'
+    : '<div class="print-ing"><span class="print-ing-amt">' + x(scaleAmount(z.menge||'', factor)) + ' ' + x(z.einheit||'') + '</span><span>' + x(z.name) + '</span></div>'
   ).join('');
-  const bildUrl = r.haupt_bild || r.bilder?.[0]?.url;
-  const bildHtml = bildUrl ? `<img class="print-img" src="${window.location.origin}${bildUrl}" alt="">` : '';
+  const bildUrl = safeImageUrl(r.haupt_bild || r.bilder?.[0]?.url);
+  const bildHtml = bildUrl ? `<img class="print-img" src="${x(bildUrl)}" alt="">` : '';
   const today  = new Date().toLocaleDateString('de-AT');
   let area = document.getElementById('print-area');
   if (!area) { area = document.createElement('div'); area.id = 'print-area'; document.body.appendChild(area); }
   area.innerHTML = bildHtml +
     '<div class="print-title">' + x(r.titel) + '</div>' +
-    '<div class="print-meta">' + meta + '</div>' +
+    '<div class="print-meta">' + x(meta) + '</div>' +
     (r.beschreibung ? '<div class="print-desc">' + x(r.beschreibung) + '</div>' : '') +
     (ings ? '<div class="print-sect">Zutaten</div>' + ings : '') +
     (r.zubereitung ? '<div class="print-sect">Zubereitung</div><div class="print-steps">' + x(r.zubereitung) + '</div>' : '') +
-    '<div class="print-footer">Rezeptify Familie Battlogg · ' + today + (r.quelle_url ? ' · ' + r.quelle_url : '') + '</div>';
+    '<div class="print-footer">Rezeptify Familie Battlogg · ' + today + (r.quelle_url ? ' · ' + x(r.quelle_url) : '') + '</div>';
   const oldTitle = document.title;
   document.title = r.titel;
   const img = area.querySelector('img.print-img');
@@ -379,9 +387,9 @@ function renderThumbs(r) {
   const wrap = document.getElementById('thumb-strip-wrap');
   wrap.innerHTML = `<div class="thumb-strip">
     ${(r.bilder || []).map(b =>
-      `<div class="thumb-item ${b.ist_haupt ? 'on' : ''}" onclick="switchThumb('${x(b.url)}',${b.id},this)">
-        <img src="${x(b.url)}" alt="" loading="lazy">
-        <button class="thumb-del" onclick="delThumb(event,${b.id})">×</button>
+      `<div class="thumb-item ${b.ist_haupt ? 'on' : ''}" data-url="${x(safeImageUrl(b.url))}" onclick="switchThumb(this.dataset.url,${Number(b.id)},this)">
+        <img src="${x(safeImageUrl(b.url))}" alt="" loading="lazy">
+        <button class="thumb-del" onclick="delThumb(event,${Number(b.id)})">×</button>
       </div>`).join('')}
     <div class="thumb-add" title="Aus Galerie" onclick="this.querySelector('input').click()">
       <input type="file" accept="image/*" onchange="uploadThumb(event)" style="display:none">
@@ -398,6 +406,8 @@ function renderThumbs(r) {
 }
 
 function switchThumb(url, id, el) {
+  url = safeImageUrl(url);
+  if (!url) return;
   document.getElementById('d-hero').querySelectorAll('img.d-hero-img').forEach(i => i.remove());
   const emojiEl = document.getElementById('d-emoji');
   emojiEl.style.opacity = '0';

@@ -21,16 +21,16 @@ function amount(entry) {
 
 function originTags(entry) {
   return (entry.herkunft || []).map(o => o.rezept_id
-    ? `<button class="shopping-origin" data-recipe="${o.rezept_id}">${x(o.rezept_titel || 'Rezept')}</button>`
+    ? `<button class="shopping-origin" data-recipe="${Number(o.rezept_id)}">${x(o.rezept_titel || 'Rezept')}</button>`
     : `<span class="shopping-origin">${x(o.rezept_titel || '')}</span>`).join('');
 }
 
 function rows(list) {
   if (!list.length) return '<p class="shopping-empty">Keine Einträge</p>';
-  return list.map(e => `<div class="shopping-row ${e.erledigt ? 'done' : ''}" data-id="${e.id}">
-    <button class="shopping-check" aria-label="Erledigt" data-toggle="${e.id}"><span class="material-symbols-outlined">${e.erledigt ? 'check_box' : 'check_box_outline_blank'}</span></button>
+  return list.map(e => `<div class="shopping-row ${e.erledigt ? 'done' : ''}" data-id="${Number(e.id)}">
+    <button class="shopping-check" aria-label="Erledigt" data-toggle="${Number(e.id)}"><span class="material-symbols-outlined">${e.erledigt ? 'check_box' : 'check_box_outline_blank'}</span></button>
     <div class="shopping-main"><strong>${x(amount(e))}</strong><div class="shopping-origins">${originTags(e)}</div></div>
-    <button class="shopping-delete" aria-label="Löschen" data-delete="${e.id}"><span class="material-symbols-outlined">delete</span></button>
+    <button class="shopping-delete" aria-label="Löschen" data-delete="${Number(e.id)}"><span class="material-symbols-outlined">delete</span></button>
   </div>`).join('');
 }
 

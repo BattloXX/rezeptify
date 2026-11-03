@@ -131,7 +131,7 @@ function recipeCard(r, i, local) {
       ${ingredients.length ? `<div class="bot-ing-preview">${ingredients.map(z => `<div class="bot-ing-row"><span class="bot-ing-amt">${x(z.menge || '')} ${x(z.einheit || '')}</span><span>${x(z.name)}</span></div>`).join('')}</div>` : ''}
     </div>
     <div class="bot-card-footer">${local
-      ? `<button class="btn btn-accent" onclick="openDetail(${r.id})"><span class="material-symbols-outlined">menu_book</span> Rezept öffnen</button>`
+      ? `<button class="btn btn-accent" onclick="openDetail(${Number(r.id)})"><span class="material-symbols-outlined">menu_book</span> Rezept öffnen</button>`
       : `<button class="btn btn-accent" onclick="botSaveResult(${i})"><span class="material-symbols-outlined">bookmark_add</span> Speichern</button><button class="btn btn-ghost" onclick="botEditResult(${i})"><span class="material-symbols-outlined">edit</span> Bearbeiten</button>`
     }</div>
   </div>`;

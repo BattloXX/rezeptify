@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Literal, Optional, List
 
 
@@ -24,3 +24,13 @@ class RezeptIn(BaseModel):
     quelle_typ:              Optional[str] = "manuell"
     quelldatei:              Optional[str] = None
     kalorien_pro_portion:    Optional[int] = None
+
+    @field_validator("quelle_url")
+    @classmethod
+    def sanitize_quelle_url(cls, value):
+        if value is None:
+            return ""
+        value = value.strip()
+        if len(value) > 500 or not value.lower().startswith(("http://", "https://")):
+            return ""
+        return value

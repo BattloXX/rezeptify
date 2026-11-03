@@ -60,7 +60,7 @@ function render() {
   document.getElementById('km-step').innerHTML = step
     ? `<p class="km-step-text">${x(step.text)}</p>
        ${ingredients ? `<div class="km-ingredients"><strong>Dafür bereitstellen</strong>${ingredients}</div>` : ''}
-       ${step.timer_sekunden ? `<button class="km-timer-start" onclick="startKochTimer(${step.timer_sekunden}, ${KM.index})"><span class="material-symbols-outlined">timer</span>${duration(step.timer_sekunden)} starten</button>` : ''}`
+       ${step.timer_sekunden ? `<button class="km-timer-start" onclick="startKochTimer(${Number(step.timer_sekunden)}, ${KM.index})"><span class="material-symbols-outlined">timer</span>${duration(step.timer_sekunden)} starten</button>` : ''}`
     : `<p class="km-step-text">${x(KM.recipe?.zubereitung || 'Für dieses Rezept ist keine Zubereitung hinterlegt.')}</p>`;
   const wake = document.getElementById('km-wake');
   wake.hidden = !('wakeLock' in navigator);
