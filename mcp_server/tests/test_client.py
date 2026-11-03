@@ -55,6 +55,10 @@ async def test_add_recipe_validates_creates_and_attaches_image():
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        if request.url.path == "/api/rezepte/aehnlich":
+            assert request.method == "GET"
+            assert request.url.params["titel"] == "Tomatensuppe"
+            return httpx.Response(200, json={"treffer": []})
         if request.url.path == "/api/analysiere-bild":
             assert request.method == "POST"
             assert request.headers["content-type"].startswith("multipart/form-data")
@@ -80,7 +84,7 @@ async def test_add_recipe_validates_creates_and_attaches_image():
         await client.aclose()
 
     assert [request.url.path for request in requests] == [
-        "/api/analysiere-bild", "/api/rezepte", "/api/rezepte/42/bilder/attach"
+        "/api/rezepte/aehnlich", "/api/analysiere-bild", "/api/rezepte", "/api/rezepte/42/bilder/attach"
     ]
     assert all(request.headers["authorization"] == "Bearer secret" for request in requests)
 
@@ -91,6 +95,10 @@ async def test_add_recipe_skips_attachment_without_downloaded_image():
 
     def handler(request: httpx.Request) -> httpx.Response:
         paths.append(request.url.path)
+        if request.url.path == "/api/rezepte/aehnlich":
+            assert request.method == "GET"
+            assert request.url.params["titel"] == "Tomatensuppe"
+            return httpx.Response(200, json={"treffer": []})
         if request.url.path == "/api/analysiere-bild":
             return httpx.Response(200, json=_payload())
         return httpx.Response(201, json={"id": 3, "slug": "tomatensuppe-3", "titel": "Tomatensuppe"})
@@ -100,7 +108,7 @@ async def test_add_recipe_skips_attachment_without_downloaded_image():
         await client.add_recipe(_payload())
     finally:
         await client.aclose()
-    assert paths == ["/api/analysiere-bild", "/api/rezepte"]
+    assert paths == ["/api/rezepte/aehnlich", "/api/analysiere-bild", "/api/rezepte"]
 
 
 @pytest.mark.asyncio
@@ -125,7 +133,8 @@ async def test_search_categories_and_tags_use_expected_endpoints_and_shapes():
         if request.url.path == "/api/rezepte":
             return httpx.Response(200, json={"items": [{
                 "id": 1, "titel": "Suppe", "slug": "suppe-1", "kategorie": "Suppen",
-                "tags": ["warm"], "beschreibung": "nicht weitergeben",
+                "tags": ["warm"], "beschreibung": "x" * 170,
+                "favorit": 1, "bewertung": 5, "zeit_vorb": 10, "zeit_koch": 20,
             }]})
         if request.url.path == "/api/kategorien":
             return httpx.Response(200, json=["Suppen", "Desserts"])
@@ -134,7 +143,8 @@ async def test_search_categories_and_tags_use_expected_endpoints_and_shapes():
     client = RezeptifyClient("https://rezeptify.example", "secret", transport=httpx.MockTransport(handler))
     try:
         assert await client.search_recipes("suppe", "Suppen", "warm", 5) == [{
-            "id": 1, "titel": "Suppe", "slug": "suppe-1", "kategorie": "Suppen", "tags": ["warm"]
+            "id": 1, "titel": "Suppe", "slug": "suppe-1", "kategorie": "Suppen", "tags": ["warm"],
+            "beschreibung": "x" * 160 + "…", "favorit": True, "bewertung": 5, "zeit_gesamt": 30,
         }]
         assert await client.list_categories() == ["Suppen", "Desserts"]
         assert await client.list_tags() == ["warm", "schnell"]
@@ -273,3 +283,74 @@ def test_group_fields_round_trip_through_marker_rows():
     assert [row.get("gruppe") for row in rows] == ["Rub", None, None, None]
     assert [row.get("name") for row in rows] == [None, "Pfeffer", "Salz", "Rinderbrust"]
     assert RezeptifyClient._ingredients_from_rows(rows)[:2] == ingredients[:2]
+
+
+@pytest.mark.asyncio
+async def test_add_recipe_rejects_duplicate_before_any_post():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.method == "GET"
+        assert request.url.path == "/api/rezepte/aehnlich"
+        return httpx.Response(200, json={"treffer": [{
+            "id": 7, "titel": "Tomatensuppe", "slug": "tomatensuppe-7",
+        }]})
+
+    client = RezeptifyClient("https://rezeptify.example", "secret", transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(RuntimeError) as exc:
+            await client.add_recipe(_payload())
+        assert "ID 7: Tomatensuppe" in str(exc.value)
+        assert "https://rezeptify.example/rezept/tomatensuppe-7" in str(exc.value)
+        assert "update_recipe" in str(exc.value)
+        assert "allow_duplicate=true" in str(exc.value)
+    finally:
+        await client.aclose()
+    assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("allow_duplicate,unavailable", [(True, None), (False, 404), (False, "network")])
+async def test_add_recipe_override_or_unavailable_check_still_creates(allow_duplicate, unavailable):
+    paths = []
+
+    def handler(request):
+        paths.append(request.url.path)
+        if request.url.path == "/api/rezepte/aehnlich":
+            if unavailable == "network":
+                raise httpx.ConnectError("offline", request=request)
+            return httpx.Response(unavailable, json={"detail": "Not found"})
+        assert request.method == "POST"
+        if request.url.path == "/api/analysiere-bild":
+            return httpx.Response(200, json=_payload())
+        assert request.url.path == "/api/rezepte"
+        return httpx.Response(200, json={"id": 8})
+
+    client = RezeptifyClient("https://rezeptify.example", "secret", transport=httpx.MockTransport(handler))
+    try:
+        assert await client.add_recipe(_payload(), allow_duplicate=allow_duplicate) == {"id": 8}
+    finally:
+        await client.aclose()
+    assert paths == ([] if allow_duplicate else ["/api/rezepte/aehnlich"]) + [
+        "/api/analysiere-bild", "/api/rezepte",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_handles_empty_and_short_descriptions_and_missing_times():
+    def handler(request):
+        return httpx.Response(200, json={"items": [
+            {"beschreibung": None, "zeit_vorb": None, "zeit_koch": None},
+            {"beschreibung": "kurz", "zeit_koch": 12},
+            {"beschreibung": "x" * 160},
+        ]})
+
+    client = RezeptifyClient("https://rezeptify.example", "secret", transport=httpx.MockTransport(handler))
+    try:
+        results = await client.search_recipes()
+    finally:
+        await client.aclose()
+    assert [r["beschreibung"] for r in results] == ["", "kurz", "x" * 160]
+    assert [r["zeit_gesamt"] for r in results] == [0, 12, 0]
+    assert all(r["favorit"] is False and r["bewertung"] is None for r in results)

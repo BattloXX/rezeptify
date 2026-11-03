@@ -1,7 +1,8 @@
 import json
+import re
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Depends
-from db import get_db, clean_row, enrich, get_bilder_batch
+from db import get_db, clean_row, enrich, get_bilder_batch, build_suchtext
 from models import RezeptIn
 from slug_utils import make_slug
 from auth import require_auth
@@ -23,9 +24,12 @@ def get_rezepte(
     offset: int = Query(0),
 ):
     where, params = [], []
-    if suche:
-        where.append("MATCH(r.titel, r.beschreibung) AGAINST (%s IN BOOLEAN MODE)")
-        params.append(suche + "*")
+    tokens = [token[:50] for token in re.findall(r"\w+", suche or "", re.UNICODE)[:8]]
+    search_params = ["%" + token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+                     for token in tokens]
+    for pattern in search_params:
+        where.append("r.suchtext LIKE %s ESCAPE '\\\\'")
+        params.append(pattern)
     if kategorie:
         where.append("r.kategorie = %s"); params.append(kategorie)
     if schwierigkeit:
@@ -47,6 +51,11 @@ def get_rezepte(
              "zuletzt_gekocht": "h.zuletzt_gekocht DESC, r.erstellt_am DESC",
              "haeufig_gekocht": "COALESCE(h.anzahl_gekocht, 0) DESC, r.erstellt_am DESC",
              "lange_nicht_gekocht": "h.zuletzt_gekocht IS NOT NULL ASC, h.zuletzt_gekocht ASC, r.erstellt_am DESC"}.get(sort, "r.erstellt_am DESC")
+    order_params = []
+    if tokens and sort == "neu":
+        title_matches = " + ".join(["(r.titel LIKE %s ESCAPE '\\\\')"] * len(tokens))
+        order = f"({title_matches}) DESC, r.erstellt_am DESC"
+        order_params = search_params
 
     history_join = "LEFT JOIN (SELECT rezept_id, MAX(gekocht_am) AS zuletzt_gekocht, COUNT(*) AS anzahl_gekocht FROM kochhistorie GROUP BY rezept_id) h ON h.rezept_id = r.id"
 
@@ -55,7 +64,7 @@ def get_rezepte(
             cur.execute(f"SELECT COUNT(*) AS n FROM rezepte r {history_join} {w}", params)
             total = cur.fetchone()["n"]
             cur.execute(f"SELECT r.*, h.zuletzt_gekocht, COALESCE(h.anzahl_gekocht, 0) AS anzahl_gekocht FROM rezepte r {history_join} {w} ORDER BY {order} LIMIT %s OFFSET %s",
-                        params + [limit, offset])
+                        params + order_params + [limit, offset])
             rows = cur.fetchall()
             bilder_map = get_bilder_batch(cur, [r["id"] for r in rows])
             items = []
@@ -126,14 +135,16 @@ def create_rezept(data: RezeptIn):
             cur.execute("""
                 INSERT INTO rezepte (titel,beschreibung,zutaten,zubereitung,portionen,
                     zeit_vorb,zeit_koch,schwierigkeit,kategorie,tags,quelle_url,quelle_typ,
-                    quelldatei,kalorien_pro_portion)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    quelldatei,kalorien_pro_portion,suchtext)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (data.titel, data.beschreibung,
                   json.dumps([z.dict() for z in data.zutaten], ensure_ascii=False),
                   data.zubereitung, data.portionen, data.zeit_vorb, data.zeit_koch,
                   data.schwierigkeit, data.kategorie,
                   json.dumps(data.tags, ensure_ascii=False),
-                  data.quelle_url, data.quelle_typ, data.quelldatei, data.kalorien_pro_portion))
+                  data.quelle_url, data.quelle_typ, data.quelldatei, data.kalorien_pro_portion,
+                  build_suchtext(data.titel, data.beschreibung, data.kategorie,
+                                 data.tags, [z.dict() for z in data.zutaten])))
             new_id = cur.lastrowid
             slug = make_slug(data.titel, new_id)
             cur.execute("UPDATE rezepte SET slug=%s WHERE id=%s", (slug, new_id))
@@ -149,14 +160,16 @@ def update_rezept(rid: int, data: RezeptIn):
                 UPDATE rezepte SET titel=%s,beschreibung=%s,zutaten=%s,zubereitung=%s,
                     portionen=%s,zeit_vorb=%s,zeit_koch=%s,schwierigkeit=%s,
                     kategorie=%s,tags=%s,quelle_url=%s,quelle_typ=%s,
-                    quelldatei=%s,kalorien_pro_portion=%s
+                    quelldatei=%s,kalorien_pro_portion=%s,suchtext=%s
                 WHERE id=%s
             """, (data.titel, data.beschreibung,
                   json.dumps([z.dict() for z in data.zutaten], ensure_ascii=False),
                   data.zubereitung, data.portionen, data.zeit_vorb, data.zeit_koch,
                   data.schwierigkeit, data.kategorie,
                   json.dumps(data.tags, ensure_ascii=False),
-                  data.quelle_url, data.quelle_typ, data.quelldatei, data.kalorien_pro_portion, rid))
+                  data.quelle_url, data.quelle_typ, data.quelldatei, data.kalorien_pro_portion,
+                  build_suchtext(data.titel, data.beschreibung, data.kategorie,
+                                 data.tags, [z.dict() for z in data.zutaten]), rid))
             slug = make_slug(data.titel, rid)
             cur.execute("UPDATE rezepte SET slug=%s WHERE id=%s", (slug, rid))
             cur.execute("SELECT * FROM rezepte WHERE id=%s", (rid,))

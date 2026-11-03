@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from config import BASE_DIR, UPLOAD_DIR, APP_TITLE, DEBUG
 from db import get_db, init_db
-from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system, mcp_auth
+from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system, mcp_auth, aehnlich
 from mcp_server.server import build_production_http_app, get_production_oauth_provider
 
 logger = logging.getLogger(__name__)
@@ -103,6 +103,7 @@ app.add_middleware(
 app.add_middleware(MCPBarePathMiddleware)
 
 app.include_router(vorschlag.router)
+app.include_router(aehnlich.router)
 app.include_router(rezepte.router)
 app.include_router(bilder.router)
 app.include_router(ai.router)

@@ -56,8 +56,11 @@ dieses Repositories.
 ```
 
 Der Server bietet `search_recipes`, `get_recipe`, `add_recipe`, `update_recipe`,
-`list_categories` und `list_tags`. Vor dem Anlegen oder Ändern soll Claude immer
-zuerst nach ähnlichen Rezepten suchen. Vor `update_recipe` muss Claude
+`list_categories`, `list_tags` und `find_duplicate_recipes`. Die Suche verlangt,
+dass alle Suchwörter vorkommen (Titel, Beschreibung, Kategorie, Tags, Zutaten).
+`add_recipe` lehnt ähnliche Titel ab und nennt die vorhandenen Rezepte; mit
+`allow_duplicate=true` wird trotzdem angelegt. `find_duplicate_recipes` listet nur
+Kandidaten, es wird nichts gelöscht. Vor `update_recipe` muss Claude
 `get_recipe` aufrufen und nur die zu ändernden Felder übergeben; leere Zutaten-
 oder Tag-Listen löschen diese gezielt.
 

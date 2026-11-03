@@ -39,6 +39,15 @@ def parse_json_field(val):
         return []
 
 
+def build_suchtext(titel, beschreibung, kategorie, tags, zutaten) -> str:
+    parts = [titel, beschreibung, kategorie]
+    parts.extend(parse_json_field(tags))
+    for zutat in parse_json_field(zutaten):
+        if isinstance(zutat, dict):
+            parts.extend([zutat.get("name"), zutat.get("gruppe")])
+    return " ".join(str(part) for part in parts if part)
+
+
 def clean_row(row: dict) -> dict:
     row["zutaten"] = parse_json_field(row.get("zutaten"))
     row["tags"] = parse_json_field(row.get("tags"))
@@ -289,6 +298,7 @@ def init_db():
             ("quelldatei",          "ADD COLUMN quelldatei VARCHAR(255) DEFAULT NULL AFTER quelle_typ"),
             ("schritte_quelle",     "ADD COLUMN schritte_quelle ENUM('keine','auto','manuell') DEFAULT 'keine' AFTER zubereitung"),
             ("favorit",              "ADD COLUMN favorit TINYINT(1) NOT NULL DEFAULT 0 AFTER bewertung"),
+            ("suchtext",            "ADD COLUMN suchtext LONGTEXT NULL"),
         ]:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -314,4 +324,13 @@ def init_db():
             for row in cur.fetchall():
                 cur.execute("UPDATE rezepte SET slug=%s WHERE id=%s",
                             (make_slug(row["titel"], row["id"]), row["id"]))
+        conn.commit()
+
+        # Backfill search text for existing recipes
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, titel, beschreibung, kategorie, tags, zutaten FROM rezepte WHERE suchtext IS NULL")
+            for row in cur.fetchall():
+                cur.execute("UPDATE rezepte SET suchtext=%s WHERE id=%s",
+                            (build_suchtext(row["titel"], row["beschreibung"], row["kategorie"],
+                                           row["tags"], row["zutaten"]), row["id"]))
         conn.commit()
