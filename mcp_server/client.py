@@ -6,6 +6,10 @@ from typing import Any
 import httpx
 
 
+class DuplicateRecipeError(RuntimeError):
+    """An existing recipe requires an explicit duplicate override."""
+
+
 class RezeptifyClient:
     """Small authenticated wrapper around the Rezeptify REST API."""
 
@@ -15,8 +19,10 @@ class RezeptifyClient:
         api_token: str,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
+        public_base_url: str | None = None,
     ):
         self.base_url = base_url.rstrip("/")
+        self.public_base_url = (public_base_url or base_url).rstrip("/")
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {api_token}"},
@@ -46,8 +52,27 @@ class RezeptifyClient:
                 f"Rezeptify API antwortete mit {response.status_code}: {cls._error_detail(response)}"
             )
 
-    async def add_recipe(self, payload: dict) -> dict:
-        """Validate structured JSON, create it, and attach a downloaded image."""
+    async def add_recipe(self, payload: dict, allow_duplicate: bool = False) -> dict:
+        """Check title duplicates, validate JSON, create it, and attach an image."""
+        if not allow_duplicate:
+            try:
+                similar = await self._client.get(
+                    "/api/rezepte/aehnlich", params={"titel": payload.get("title", "")}
+                )
+            except httpx.RequestError:
+                similar = None
+            if similar is not None and similar.is_success:
+                matches = similar.json()["treffer"]
+                if matches:
+                    candidates = "\n".join(
+                        f"ID {item['id']}: {item['titel']} – {self.public_base_url}/rezept/{item['slug']}"
+                        for item in matches
+                    )
+                    raise DuplicateRecipeError(
+                        f"Ähnliche Rezepte existieren bereits:\n{candidates}\n"
+                        "Vorhandenes Rezept mit update_recipe ändern oder add_recipe erneut "
+                        "mit allow_duplicate=true aufrufen"
+                    )
         analysis = await self._client.post(
             "/api/analysiere-bild",
             files={"file": ("recipe.json", json.dumps(payload).encode("utf-8"), "application/json")},
@@ -82,9 +107,21 @@ class RezeptifyClient:
         response = await self._client.get("/api/rezepte", params=params)
         self._raise_for_status(response)
         return [
-            {key: item.get(key) for key in ("id", "titel", "slug", "kategorie", "tags")}
+            {
+                **{key: item.get(key) for key in ("id", "titel", "slug", "kategorie", "tags")},
+                "beschreibung": (item.get("beschreibung") or "")[:160]
+                + ("…" if len(item.get("beschreibung") or "") > 160 else ""),
+                "favorit": bool(item.get("favorit")),
+                "bewertung": item.get("bewertung"),
+                "zeit_gesamt": (item.get("zeit_vorb") or 0) + (item.get("zeit_koch") or 0),
+            }
             for item in response.json()["items"]
         ]
+
+    async def find_duplicate_recipes(self) -> list[dict]:
+        response = await self._client.get("/api/rezepte/duplikate")
+        self._raise_for_status(response)
+        return response.json()["paare"]
 
     @staticmethod
     def _steps_from_instructions(instructions: str | None) -> list[str]:

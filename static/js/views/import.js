@@ -103,6 +103,7 @@ async function doFileAnalyse() {
 }
 
 function renderPreview(r) {
+  document.getElementById('import-dup-hint')?.remove();
   const previewHeader = document.querySelector('#preview-card .preview-hdr');
   if (previewHeader) previewHeader.innerHTML = r.structured_import
     ? '<span class="material-symbols-outlined">fact_check</span> Dateivorschau'
@@ -139,6 +140,14 @@ function renderPreview(r) {
     ${items.length ? `<ul style="list-style:none">${items.join('')}${more}</ul>` : ''}
   `;
   document.getElementById('preview-card')?.classList.add('on');
+  api('/api/rezepte/aehnlich?titel=' + encodeURIComponent(r.titel)).then(data => {
+    if (S.importData !== r || !document.getElementById('preview-card')?.classList.contains('on')) return;
+    document.getElementById('import-dup-hint')?.remove();
+    if (!data.treffer?.length) return;
+    previewHeader?.insertAdjacentHTML('afterend', `<div id="import-dup-hint" role="status">${data.treffer.map(item =>
+      `Ähnliches Rezept existiert bereits: ${x(item.titel)} <button type="button" onclick="openDetail(${Number(item.id)})">(öffnen)</button>`
+    ).join('<br>')}</div>`);
+  }).catch(() => {});
 }
 
 async function doImportSave() {

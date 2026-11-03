@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import httpx
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.auth.routes import create_auth_routes, create_protected_resource_routes
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.server.auth.settings import AuthSettings
@@ -19,7 +20,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from mcp_server.client import RezeptifyClient
+from mcp_server.client import DuplicateRecipeError, RezeptifyClient
 from mcp_server.oauth_provider import RezeptifyOAuthProvider
 
 
@@ -38,6 +39,9 @@ def _logged(fn):
             logger.info("MCP-Tool %s ok in %.0f ms", fn.__name__,
                         (time.monotonic() - started) * 1000)
             return result
+        except DuplicateRecipeError as exc:
+            logger.info("MCP-Tool %s: ähnliches Rezept vorhanden", fn.__name__)
+            raise ToolError(str(exc)) from exc
         except Exception as exc:
             logger.exception("MCP-Tool %s fehlgeschlagen", fn.__name__)
             raise RuntimeError(f"{type(exc).__name__}: {exc}") from exc
@@ -71,10 +75,12 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         source_url: str = "",
         image_url: str | None = None,
         calories_per_serving: int | None = None,
+        allow_duplicate: bool = False,
     ) -> dict:
         """Add a recipe to the family's private recipe database.
 
-        First call search_recipes with a similar title to avoid creating duplicates.
+        Similar titles are rejected with existing recipe IDs and URLs. Use
+        update_recipe to change one, or allow_duplicate=true to create it anyway.
         """
         payload = {
             "format": "rezeptify-recipe/v1",
@@ -92,7 +98,7 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
             "image_url": image_url,
             "calories_per_serving": calories_per_serving,
         }
-        recipe = await client.add_recipe(payload)
+        recipe = await client.add_recipe(payload, allow_duplicate=allow_duplicate)
         return {
             "id": recipe["id"],
             "slug": recipe["slug"],
@@ -106,13 +112,25 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
     async def search_recipes(
         query: str = "", category: str = "", tag: str = "", limit: int = 10
     ) -> list[dict]:
-        """Search titles and descriptions with optional category and tag filters.
+        """Search titles, descriptions, categories, tags and ingredients.
 
-        Return id, titel, slug, kategorie and tags; limit is clamped to 1..200.
-        Use before add_recipe to check for duplicates.
+        All search words must occur (AND). Optional category and tag filters apply.
+        Return id, titel, slug, kategorie, tags, beschreibung (160 characters,
+        then … if truncated), favorit, bewertung and zeit_gesamt in minutes.
+        The limit is clamped to 1..200.
         """
         limit = max(1, min(limit, 200))
         return await client.search_recipes(query, category, tag, limit)
+
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    @_logged
+    async def find_duplicate_recipes() -> list[dict]:
+        """List title-based duplicate candidates; nothing is deleted or merged.
+
+        Return pairs a and b (id, titel) with their aehnlichkeit score.
+        """
+        return await client.find_duplicate_recipes()
 
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
@@ -299,12 +317,13 @@ def build_production_http_app() -> Starlette | _ProtectedMCPApp:
 
     loopback_url = os.getenv("REZEPTIFY_LOOPBACK_URL")
     if loopback_url:
-        client = RezeptifyClient(loopback_url, MCP_API_TOKEN)
+        client = RezeptifyClient(loopback_url, MCP_API_TOKEN, public_base_url=PUBLIC_BASE_URL)
     else:
         # Call the REST API inside this process: no dependency on the port the
         # process manager (CloudPanel/systemd) happens to bind.
         client = RezeptifyClient("http://rezeptify.internal", MCP_API_TOKEN,
-                                 transport=httpx.ASGITransport(app=_call_rest_app))
+                                 transport=httpx.ASGITransport(app=_call_rest_app),
+                                 public_base_url=PUBLIC_BASE_URL)
     # mcp==2.2.0 deliberately rejects arbitrary clear-text issuers.  The
     # in-process TestClient uses ``http://testserver`` while the production
     # value is HTTPS, so use its permitted localhost spelling only for SDK

@@ -165,7 +165,10 @@ Das Datenbankschema wird beim Start automatisch angelegt und bei Updates migrier
 
 Rezepte lassen sich aus einem KI-Chat heraus suchen, lesen, anlegen und ändern.
 Tools: `search_recipes`, `get_recipe`, `add_recipe`, `update_recipe`,
-`list_categories`, `list_tags`. Vor einer Änderung wird das Rezept mit
+`list_categories`, `list_tags`, `find_duplicate_recipes`. Die Suche verknüpft alle
+Wörter mit UND und durchsucht Titel, Beschreibung, Kategorie, Tags und Zutaten.
+`add_recipe` weist ähnliche Titel ab (`allow_duplicate=true` überschreibt das).
+Vor einer Änderung wird das Rezept mit
 `get_recipe` gelesen; `update_recipe` ändert nur übergebene Felder und nutzt für
 neue Rezepte denselben Validierungsweg wie der JSON-Import.
 
