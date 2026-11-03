@@ -4,8 +4,12 @@ import { S } from '../app.js';
 import { loadGrid, loadTags } from './home.js';
 import { closeOverlay } from './detail.js';
 
+let saving = false;
+let pendingImageDeletes = [];
+
 // ── Open form ─────────────────────────────────────────────────────────────────
 export function openNewForm(prefill = null) {
+  pendingImageDeletes = [];
   S.editId = null; S.formTags = []; S.formNewImgs = []; S.formNewImgUrls = [];
   document.getElementById('form-title').textContent = 'Neues Rezept';
   resetForm();
@@ -16,6 +20,7 @@ export function openNewForm(prefill = null) {
 }
 
 export async function openEditForm(id) {
+  pendingImageDeletes = [];
   try {
     const snap = await api('/api/rezepte/' + id);
     S.editId = snap.id;
@@ -67,7 +72,7 @@ export function renderFormImgs() {
   S.formImgUrls = S.formNewImgs.map(f => URL.createObjectURL(f));
   const wrap  = document.getElementById('form-imgs');
   if (!wrap) return;
-  const exist = S.editId && S.current ? S.current.bilder||[] : [];
+  const exist = S.editId && S.current ? (S.current.bilder||[]).filter(b => !pendingImageDeletes.includes(b.id)) : [];
   wrap.innerHTML =
     exist.map(b =>
       `<div class="img-thumb"><img src="${x(b.url)}" alt="">
@@ -99,9 +104,8 @@ async function addFormImgUrl() {
   } catch (err) { toast(err.message, 'err'); }
 }
 window.addFormImgUrl = addFormImgUrl;
-window.delFormExistImg = async (id) => {
-  await api('/api/bilder/'+id, {method:'DELETE'}).catch(()=>{});
-  if (S.current) S.current.bilder = S.current.bilder.filter(b => b.id !== id);
+window.delFormExistImg = (id) => {
+  if (!pendingImageDeletes.includes(id)) pendingImageDeletes.push(id);
   renderFormImgs();
 };
 
@@ -182,8 +186,10 @@ window.renderFormTags = renderFormTags;
 
 // ── Save form ─────────────────────────────────────────────────────────────────
 async function saveForm() {
+  if (saving) return;
   const titel = document.getElementById('f-titel')?.value.trim();
   if (!titel) { toast('Bitte Titel eingeben', 'err'); return; }
+  saving = true;
   const btn = document.querySelector('#ov-form .btn-accent');
   if (btn) btn.disabled = true;
   const payload = {
@@ -201,28 +207,64 @@ async function saveForm() {
     tags:          S.formTags,
     quelle_typ:    S.editId ? (S.current?.quelle_typ||'manuell') : 'manuell'
   };
+  const wasNew = !S.editId;
   try {
     let r = S.editId
       ? await api('/api/rezepte/'+S.editId, { method:'PUT',  body: JSON.stringify(payload) })
       : await api('/api/rezepte',           { method:'POST', body: JSON.stringify(payload) });
+    S.editId = r.id;
+    S.current = r;
+    document.getElementById('form-title').textContent = 'Rezept bearbeiten';
+    const imageErrors = [];
+    for (const id of [...pendingImageDeletes]) {
+      try {
+        await api('/api/bilder/'+id, { method:'DELETE' });
+        pendingImageDeletes = pendingImageDeletes.filter(bid => bid !== id);
+        r.bilder = (r.bilder || []).filter(b => b.id !== id);
+      } catch(e) { imageErrors.push('Bild konnte nicht gelöscht werden: ' + e.message); }
+    }
+    if (r.bilder?.length && !r.bilder.some(b => b.ist_haupt)) {
+      try {
+        await api('/api/bilder/'+r.bilder[0].id+'/haupt', { method:'PUT' });
+        r.bilder[0].ist_haupt = true;
+      } catch (_) { /* best effort */ }
+    }
     let hasImage = (r.bilder || []).length > 0;
-    for (const f of S.formNewImgs) {
-      const fd = new FormData();
-      fd.append('file', f);
-      fd.append('ist_haupt', (!hasImage).toString());
-      await apiFetch('/api/rezepte/'+r.id+'/bilder', { method:'POST', body: fd });
-      hasImage = true;
+    let uploaded = false;
+    for (const f of [...S.formNewImgs]) {
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('ist_haupt', (!hasImage).toString());
+        await apiFetch('/api/rezepte/'+r.id+'/bilder', { method:'POST', body: fd });
+        S.formNewImgs.splice(S.formNewImgs.indexOf(f), 1);
+        hasImage = true;
+        uploaded = true;
+      } catch(e) { imageErrors.push(e.message); }
     }
-    for (const image of S.formNewImgUrls) {
-      await api('/api/rezepte/'+r.id+'/bilder/attach', {
-        method: 'POST',
-        body: JSON.stringify({ dateiname: image.dateiname, ist_haupt: !hasImage })
-      });
-      hasImage = true;
+    for (const image of [...S.formNewImgUrls]) {
+      try {
+        await api('/api/rezepte/'+r.id+'/bilder/attach', {
+          method: 'POST',
+          body: JSON.stringify({ dateiname: image.dateiname, ist_haupt: !hasImage })
+        });
+        S.formNewImgUrls.splice(S.formNewImgUrls.indexOf(image), 1);
+        hasImage = true;
+        uploaded = true;
+      } catch(e) { imageErrors.push(e.message); }
     }
-    toast(S.editId ? 'Gespeichert ✓' : 'Rezept erstellt ✓', 'ok');
+    if (uploaded) {
+      try { S.current = await api('/api/rezepte/'+r.id); }
+      catch(e) { imageErrors.push('Bilder konnten nicht neu geladen werden: ' + e.message); }
+    }
+    if (imageErrors.length) {
+      toast('Rezept gespeichert, aber ' + imageErrors.length + ' Bild(er) konnten nicht hochgeladen werden: ' + imageErrors.join('; '), 'err');
+      renderFormImgs();
+      loadGrid(); loadTags();
+      return;
+    }
+    toast(wasNew ? 'Rezept erstellt ✓' : 'Gespeichert ✓', 'ok');
     const savedId = r.id;
-    const wasNew  = !S.editId;
     closeOverlay('ov-form');
     loadGrid(); loadTags();
     if (wasNew) {
@@ -231,7 +273,7 @@ async function saveForm() {
         .catch(()=>{});
     }
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
-  finally { if (btn) btn.disabled = false; }
+  finally { saving = false; if (btn) btn.disabled = false; }
 }
 window.saveForm = saveForm;
 

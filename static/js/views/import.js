@@ -1,5 +1,5 @@
 import { api, apiFetch } from '../api.js';
-import { toast, x } from '../utils.js';
+import { toast, x, safeImageUrl } from '../utils.js';
 import { S } from '../app.js';
 import { loadGrid, loadTags } from './home.js';
 import { openNewForm } from './form.js';
@@ -7,6 +7,7 @@ import { showView } from '../app.js';
 
 let importFiles = [];
 let isImportProcessing = false;
+let isImportSaving = false;
 
 export function initImport() {
   window.switchTab     = switchTab;
@@ -106,9 +107,10 @@ function renderPreview(r) {
   if (previewHeader) previewHeader.innerHTML = r.structured_import
     ? '<span class="material-symbols-outlined">fact_check</span> Dateivorschau'
     : '<span class="material-symbols-outlined">auto_awesome</span> Vorschau';
-  const gz = (r.zeit_vorb||0) + (r.zeit_koch||0);
-  const previewImg = r.downloaded_image
-    ? `<img class="preview-img" src="/static/uploads/${x(r.downloaded_image)}" alt="${x(r.titel)}" onerror="this.remove()">` : '';
+  const gz = (Number(r.zeit_vorb)||0) + (Number(r.zeit_koch)||0);
+  const previewUrl = safeImageUrl('/static/uploads/' + (r.downloaded_image || ''));
+  const previewImg = previewUrl
+    ? `<img class="preview-img" src="${x(previewUrl)}" alt="${x(r.titel)}" onerror="this.remove()">` : '';
   const allZ = r.zutaten||[];
   const realZ = allZ.filter(z => !z.gruppe);
   let shown = 0;
@@ -140,10 +142,12 @@ function renderPreview(r) {
 }
 
 async function doImportSave() {
-  if (!S.importData) return;
+  if (!S.importData || isImportSaving) return;
+  isImportSaving = true;
   try {
     const r = await saveImportedRecipe(S.importData, S.importFile);
-    toast('Rezept gespeichert ✓', 'ok');
+    if (r.imageErrors.length) toast('Rezept gespeichert, Bild konnte nicht angehängt werden', 'err');
+    else toast('Rezept gespeichert ✓', 'ok');
     fetchImportedImage(r.id, true);
     clearPreview();
     const ui = document.getElementById('import-url');
@@ -152,6 +156,7 @@ async function doImportSave() {
     loadGrid(); loadTags();
     showView('home');
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+  finally { isImportSaving = false; }
 }
 
 async function analyseUrl(url) {
@@ -166,23 +171,30 @@ async function analyseFile(file) {
 
 async function saveImportedRecipe(data, file) {
   const r = await api('/api/rezepte', { method:'POST', body: JSON.stringify(data) });
+  const imageErrors = [];
   if (data.downloaded_image) {
-    await api('/api/rezepte/'+r.id+'/bilder/attach', {
-      method:'POST', body: JSON.stringify({ dateiname: data.downloaded_image, ist_haupt: true })
-    });
+    try {
+      await api('/api/rezepte/'+r.id+'/bilder/attach', {
+        method:'POST', body: JSON.stringify({ dateiname: data.downloaded_image, ist_haupt: true })
+      });
+    } catch(e) { imageErrors.push(e.message); }
   }
   if (data.import_image) {
-    await api('/api/rezepte/'+r.id+'/bilder/attach', {
-      method:'POST', body: JSON.stringify({ dateiname: data.import_image, ist_haupt: false })
-    });
+    try {
+      await api('/api/rezepte/'+r.id+'/bilder/attach', {
+        method:'POST', body: JSON.stringify({ dateiname: data.import_image, ist_haupt: false })
+      });
+    } catch(e) { imageErrors.push(e.message); }
   }
   if (file && !('import_image' in data) && !file.name.toLowerCase().endsWith('.pdf') && !file.name.toLowerCase().endsWith('.json')) {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('ist_haupt', (!data.downloaded_image).toString());
-    await apiFetch('/api/rezepte/'+r.id+'/bilder', { method:'POST', body: fd });
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('ist_haupt', (!data.downloaded_image).toString());
+      await apiFetch('/api/rezepte/'+r.id+'/bilder', { method:'POST', body: fd });
+    } catch(e) { imageErrors.push(e.message); }
   }
-  return r;
+  return { ...r, imageErrors };
 }
 
 async function fetchImportedImage(recipeId, notify = false) {
@@ -210,7 +222,7 @@ async function doBatchImport(items) {
       const recipe = await saveImportedRecipe(data, item.type === 'file' ? item.value : null);
       await fetchImportedImage(recipe.id);
       saved++;
-      updateBatchResult(i, 'saved', 'Gespeichert ✓');
+      updateBatchResult(i, 'saved', recipe.imageErrors.length ? 'Gespeichert (Bild fehlgeschlagen)' : 'Gespeichert ✓');
     } catch (e) {
       updateBatchResult(i, 'error', `Fehler: ${e.message || 'Unbekannter Fehler'}`);
     }

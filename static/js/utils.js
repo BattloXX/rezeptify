@@ -1,6 +1,21 @@
 // ── HTML escape ───────────────────────────────────────────────────────────────
 export function x(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+export function safeUrl(u) {
+  const value = String(u ?? '').trim();
+  if (!/^https?:\/\//i.test(value)) return '';
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? value : '';
+  } catch { return ''; }
+}
+
+// Images also come from our own upload directory; arbitrary relative URLs are rejected.
+export function safeImageUrl(u) {
+  const value = String(u ?? '').trim();
+  return /^\/static\/uploads\/[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$/.test(value) ? value : safeUrl(value);
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -88,7 +103,7 @@ export function scaleAmount(menge, factor) {
   if (range) return formatNum(parseFloat(range[1].replace(',','.')) * factor) + '–' + formatNum(parseFloat(range[2].replace(',','.')) * factor);
   const num = parseFloat(menge.replace(',','.'));
   if (!isNaN(num)) return formatNum(num * factor);
-  return x(menge);
+  return menge;
 }
 
 // ── Sharing ──────────────────────────────────────────────────────────────────
@@ -123,9 +138,9 @@ export function renderCardStars(bewertung) {
 export function renderDetailStars(bewertung, rid) {
   return [1,2,3,4,5].map(i =>
     `<span class="star ${bewertung && i <= bewertung ? 'filled' : 'empty'}"
-      onclick="setBewertung(${rid},${i})"
+      onclick="setBewertung(${Number(rid)},${i})"
       onmouseenter="previewStars(${i})"
-      onmouseleave="resetStarPreview(${rid},${bewertung||0})"
+      onmouseleave="resetStarPreview(${Number(rid)},${Number(bewertung)||0})"
     >${bewertung && i <= bewertung ? '★' : '☆'}</span>`
   ).join('');
 }

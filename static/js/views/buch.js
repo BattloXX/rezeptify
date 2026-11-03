@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { toast, x, EM } from '../utils.js';
+import { toast, x, safeImageUrl, EM } from '../utils.js';
 
 const RB = { selected: [], allRezepte: [], dragSrc: null };
 
@@ -43,16 +43,16 @@ function renderRbAvail(filter = '') {
   if (cnt) cnt.textContent = items.length;
   list.innerHTML = items.length ? items.map(r => {
     const em    = EM[r.kategorie] || '🍴';
-    const img   = r.haupt_bild || r.bilder?.[0]?.url;
+    const img   = safeImageUrl(r.haupt_bild || r.bilder?.[0]?.url);
     const thumb = img ? `<div class="rb-item-thumb"><img src="${x(img)}" alt=""></div>` : `<div class="rb-item-thumb">${em}</div>`;
-    const gz    = (r.zeit_vorb||0)+(r.zeit_koch||0);
-    return `<li class="rb-item" onclick="rbAdd(${r.id})">
+    const gz    = (Number(r.zeit_vorb)||0)+(Number(r.zeit_koch)||0);
+    return `<li class="rb-item" onclick="rbAdd(${Number(r.id)})">
       ${thumb}
       <div class="rb-item-info">
         <div class="rb-item-title">${x(r.titel)}</div>
         <div class="rb-item-meta">${x(r.kategorie||'')}${gz?' · '+gz+' min':''}</div>
       </div>
-      <button class="rb-item-add" onclick="event.stopPropagation();rbAdd(${r.id})">+</button>
+      <button class="rb-item-add" onclick="event.stopPropagation();rbAdd(${Number(r.id)})">+</button>
     </li>`;
   }).join('') : `<li class="rb-empty">Keine Rezepte gefunden</li>`;
 }
@@ -70,7 +70,7 @@ function renderRbSelected() {
   }
   list.innerHTML = RB.selected.map((r, i) => {
     const em    = EM[r.kategorie] || '🍴';
-    const img   = r.haupt_bild || r.bilder?.[0]?.url;
+    const img   = safeImageUrl(r.haupt_bild || r.bilder?.[0]?.url);
     const thumb = img ? `<div class="rb-sel-thumb"><img src="${x(img)}" alt=""></div>` : `<div class="rb-sel-thumb">${em}</div>`;
     return `<li class="rb-sel-item" draggable="true"
       ondragstart="rbDragStart(event,${i})" ondragover="rbDragOver(event,${i})"
@@ -79,7 +79,7 @@ function renderRbSelected() {
       <span class="rb-sel-num">${i+1}</span>
       ${thumb}
       <span class="rb-sel-title">${x(r.titel)}</span>
-      <button class="rb-sel-remove" onclick="rbRemove(${r.id})">×</button>
+      <button class="rb-sel-remove" onclick="rbRemove(${Number(r.id)})">×</button>
     </li>`;
   }).join('');
 }
@@ -128,7 +128,7 @@ async function exportRezeptbuch() {
   </div>`;
 
   const tocRows = rezepte.map((r, i) => {
-    const gz = (r.zeit_vorb||0)+(r.zeit_koch||0);
+    const gz = (Number(r.zeit_vorb)||0)+(Number(r.zeit_koch)||0);
     return `<tr class="rb-toc-row">
       <td class="rb-toc-num">${i+1}</td>
       <td class="rb-toc-name">${x(r.titel)}</td>
@@ -145,10 +145,10 @@ async function exportRezeptbuch() {
   </div>`;
 
   const recipePagesHtml = rezepte.map((r, i) => {
-    const gz      = (r.zeit_vorb||0)+(r.zeit_koch||0);
+    const gz      = (Number(r.zeit_vorb)||0)+(Number(r.zeit_koch)||0);
     const meta    = [r.kategorie, gz ? gz+' Min.' : null, r.portionen ? r.portionen+' Port.' : null, r.schwierigkeit, r.kalorien_pro_portion ? r.kalorien_pro_portion+' kcal/P.' : null].filter(Boolean).join(' · ');
-    const imgUrl  = r.haupt_bild || r.bilder?.[0]?.url;
-    const imgHtml = imgUrl ? `<img class="rb-recipe-img" src="${window.location.origin}${imgUrl}" alt="${x(r.titel)}">` : '';
+    const imgUrl  = safeImageUrl(r.haupt_bild || r.bilder?.[0]?.url);
+    const imgHtml = imgUrl ? `<img class="rb-recipe-img" src="${x(imgUrl)}" alt="${x(r.titel)}">` : '';
     const ings    = (r.zutaten||[]).map(z => z.gruppe
       ? `<tr><td colspan="2" class="rb-ing-group">${x(z.gruppe)}</td></tr>`
       : `<tr><td class="rb-ing-amt">${x(z.menge||'')} ${x(z.einheit||'')}</td><td>${x(z.name)}</td></tr>`
@@ -161,7 +161,7 @@ async function exportRezeptbuch() {
         <div>
           ${r.kategorie ? `<div class="rb-recipe-kat">${x(r.kategorie)}</div>` : ''}
           <h2 class="rb-recipe-title">${x(r.titel)}</h2>
-          <div class="rb-recipe-meta">${meta}</div>
+          <div class="rb-recipe-meta">${x(meta)}</div>
         </div>
       </div>
       ${imgHtml}

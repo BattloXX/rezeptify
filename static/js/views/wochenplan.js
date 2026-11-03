@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { toast, x } from '../utils.js';
+import { toast, x, safeImageUrl } from '../utils.js';
 import { openDetail } from './detail.js';
 
 let entries = [];
@@ -41,8 +41,8 @@ function render() {
 }
 
 function card(entry) {
-  const image = entry.haupt_bild ? `<img src="${x(entry.haupt_bild)}" alt="">` : '<span class="material-symbols-outlined">restaurant</span>';
-  return `<div class="plan-card"><button class="plan-card-main" data-open="${entry.rezept_id}"><span class="plan-thumb">${image}</span><span><small>${x(entry.mahlzeit)}</small>${x(entry.titel)}</span></button><button class="plan-remove" data-remove="${entry.id}" aria-label="Entfernen">×</button></div>`;
+  const image = entry.haupt_bild ? `<img src="${x(safeImageUrl(entry.haupt_bild))}" alt="">` : '<span class="material-symbols-outlined">restaurant</span>';
+  return `<div class="plan-card"><button class="plan-card-main" data-open="${Number(entry.rezept_id)}"><span class="plan-thumb">${image}</span><span><small>${x(entry.mahlzeit)}</small>${x(entry.titel)}</span></button><button class="plan-remove" data-remove="${Number(entry.id)}" aria-label="Entfernen">×</button></div>`;
 }
 
 function openPicker(day) {
@@ -57,7 +57,7 @@ async function renderPicker() {
   const q = document.getElementById('plan-picker-search').value.trim();
   try {
     const recipes = (await api('/api/rezepte?limit=200' + (q ? `&suche=${encodeURIComponent(q)}` : ''))).items;
-    document.getElementById('plan-picker-list').innerHTML = recipes.length ? recipes.map(r => `<button class="plan-picker-item" data-recipe="${r.id}">${r.haupt_bild ? `<img src="${x(r.haupt_bild)}" alt="">` : '<span class="material-symbols-outlined">restaurant</span>'}<span>${x(r.titel)}</span></button>`).join('') : '<p class="plan-empty">Keine Rezepte gefunden</p>';
+    document.getElementById('plan-picker-list').innerHTML = recipes.length ? recipes.map(r => `<button class="plan-picker-item" data-recipe="${Number(r.id)}">${r.haupt_bild ? `<img src="${x(safeImageUrl(r.haupt_bild))}" alt="">` : '<span class="material-symbols-outlined">restaurant</span>'}<span>${x(r.titel)}</span></button>`).join('') : '<p class="plan-empty">Keine Rezepte gefunden</p>';
     document.querySelectorAll('[data-recipe]').forEach(button => button.onclick = () => addRecipe(Number(button.dataset.recipe)));
   } catch (e) { toast(e.message, 'err'); }
 }
