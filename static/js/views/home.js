@@ -4,6 +4,16 @@ import { S } from '../app.js';
 import { openDetail } from './detail.js';
 
 let currentSort = 'neu';
+let gridRequestId = 0;
+let gridController;
+let gridQuery;
+let gridLoading = false;
+let moreLoading = false;
+let lastHistoryLoad = 0;
+let historyRequestId = 0;
+let historyHTML = '';
+let historyPending;
+let historyStarted = false;
 
 export function initHome() {
   // exposes needed for inline handlers
@@ -11,6 +21,8 @@ export function initHome() {
   window.toggleFilters = toggleFilters;
   window.setSort       = setSort;
   window.loadGrid      = loadGrid;
+  window.loadMore      = loadMore;
+  window.refreshHistory = () => loadHistorySections(true);
   window.filterByTag   = filterByTag;
   window.openQuickSuggestion = openQuickSuggestion;
 }
@@ -40,8 +52,15 @@ export function setSort(s) {
   loadGrid();
 }
 
-export async function loadGrid() {
+export async function loadGrid({ refreshHistory = false } = {}) {
+  const myId = ++gridRequestId;
+  gridController?.abort();
+  gridController = new AbortController();
+  gridQuery = null;
+  gridLoading = true;
+  moreLoading = false;
   showSkeletons();
+  updateLoadMore();
   const q = new URLSearchParams();
   const s = document.getElementById('search')?.value.trim();
   const k = document.getElementById('f-kat')?.value;
@@ -52,17 +71,58 @@ export async function loadGrid() {
   if (d) q.set('schwierigkeit', d);
   if (t) q.set('tag', t);
   q.set('sort', currentSort);
+  q.set('limit', 48);
+  q.set('offset', 0);
+  loadHistorySections(refreshHistory);
   try {
-    const data = await api('/api/rezepte?' + q);
+    const data = await api('/api/rezepte?' + q, { signal: gridController.signal });
+    if (myId !== gridRequestId) return;
+    gridQuery = q;
     S.rezepte = data.items;
     S.total   = data.total;
     renderGrid();
-    loadHistorySections();
     const tc = document.getElementById('topbar-count');
     if (tc) tc.textContent = S.total + ' Rezepte';
   } catch(e) {
+    if (myId !== gridRequestId || e.name === 'AbortError') return;
     toast('Ladefehler: ' + e.message, 'err');
+  } finally {
+    if (myId === gridRequestId) {
+      gridLoading = false;
+      updateLoadMore();
+    }
   }
+}
+
+export async function loadMore() {
+  if (gridLoading || moreLoading || !gridQuery || S.rezepte.length >= S.total) return;
+  const myId = gridRequestId;
+  const q = new URLSearchParams(gridQuery);
+  q.set('offset', S.rezepte.length);
+  moreLoading = true;
+  updateLoadMore();
+  try {
+    const data = await api('/api/rezepte?' + q, { signal: gridController.signal });
+    if (myId !== gridRequestId) return;
+    S.rezepte.push(...data.items);
+    document.getElementById('grid')?.insertAdjacentHTML('beforeend', renderRecipeCards(data.items));
+  } catch(e) {
+    if (myId !== gridRequestId || e.name === 'AbortError') return;
+    toast('Ladefehler: ' + e.message, 'err');
+  } finally {
+    if (myId === gridRequestId) {
+      moreLoading = false;
+      updateLoadMore();
+    }
+  }
+}
+
+function updateLoadMore() {
+  const button = document.getElementById('load-more');
+  if (!button) return;
+  button.hidden = !gridQuery || gridLoading || S.rezepte.length >= S.total;
+  button.disabled = gridLoading || moreLoading;
+  button.textContent = 'Mehr laden (' + (S.total - S.rezepte.length) + ' weitere)';
 }
 
 function debounce() {
@@ -143,26 +203,57 @@ function renderRecipeCards(recipes, compact = false) {
   }).join('');
 }
 
-async function loadHistorySections() {
+function hasHistoryFilters() {
+  return ['search', 'f-kat', 'f-diff', 'f-tag'].some(id => document.getElementById(id)?.value.trim());
+}
+
+async function loadHistorySections(force = false) {
   const container = document.getElementById('home-history-sections');
   if (!container) return;
+  if (hasHistoryFilters()) {
+    if (force || historyPending) lastHistoryLoad = 0;
+    ++historyRequestId;
+    historyPending = null;
+    container.innerHTML = '';
+    return;
+  }
+  if (historyPending && (!force || !historyStarted)) return historyPending;
+  if (!force && Date.now() - lastHistoryLoad <= 30000) {
+    container.innerHTML = historyHTML;
+    return;
+  }
+  const myId = ++historyRequestId;
+  lastHistoryLoad = Date.now();
   const sections = [
     ['Favoriten', 'sort=favoriten&nur_favoriten=true'],
     ['Zuletzt gekocht', 'sort=zuletzt_gekocht&nur_gekocht=true'],
     ['Häufig gekocht', 'sort=haeufig_gekocht&nur_gekocht=true'],
     ['Lange nicht gekocht', 'sort=lange_nicht_gekocht'],
   ];
-  const results = await Promise.all(sections.map(async ([title, query]) => {
-    try {
-      const data = await api('/api/rezepte?' + query + '&limit=10');
-      return { title, items: data.items };
-    } catch { return { title, items: [] }; }
-  }));
-  container.innerHTML = results.filter(section => section.items.length).map(section => `
+  historyStarted = false;
+  historyPending = Promise.resolve().then(() => {
+    if (myId !== historyRequestId) return [];
+    historyStarted = true;
+    return Promise.all(sections.map(async ([title, query]) => {
+      try {
+        const data = await api('/api/rezepte?' + query + '&limit=10');
+        return { title, items: data.items };
+      } catch { return { title, items: [] }; }
+    }));
+  });
+  const results = await historyPending;
+  if (myId !== historyRequestId) return;
+  historyPending = null;
+  if (hasHistoryFilters()) {
+    container.innerHTML = '';
+    return;
+  }
+  historyHTML = results.filter(section => section.items.length).map(section => `
     <section class="home-history-section">
-      <h2>${section.title}</h2>
+      <h2>${x(section.title)}</h2>
       <div class="home-history-row">${renderRecipeCards(section.items, true)}</div>
     </section>`).join('');
+  container.innerHTML = historyHTML;
 }
 
 async function toggleFavorite(event, rid) {
@@ -187,6 +278,7 @@ async function toggleFavorite(event, rid) {
       request: () => api('/api/rezepte/' + rid + '/favorit', { method: 'PATCH', body: JSON.stringify({ favorit: !old }) }),
       revert: () => update(old),
     });
+    loadHistorySections(true);
   } catch (_) { /* The helper already restored state and showed a toast. */ }
 }
 window.toggleFavorite = toggleFavorite;

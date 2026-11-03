@@ -230,6 +230,7 @@ async function toggleDetailFavorite() {
   };
   try {
     await optimisticToggle({ apply: () => update(!old), request: () => api('/api/rezepte/' + S.current.id + '/favorit', { method: 'PATCH', body: JSON.stringify({ favorit: !old }) }), revert: () => update(old) });
+    window.refreshHistory?.();
   } catch (_) { /* The helper already restored state and showed a toast. */ }
 }
 window.toggleDetailFavorite = toggleDetailFavorite;
@@ -245,6 +246,7 @@ async function markCookedToday() {
     const listRecipe = S.rezepte?.find(r => r.id === S.current.id);
     if (listRecipe) Object.assign(listRecipe, { zuletzt_gekocht: result.zuletzt_gekocht, anzahl_gekocht: result.anzahl_gekocht });
     toast('Als heute gekocht gespeichert', 'ok');
+    window.refreshHistory?.();
   } catch (e) { toast(e.message, 'err'); }
 }
 window.markCookedToday = markCookedToday;
@@ -405,10 +407,15 @@ function renderThumbs(r) {
   </div>`;
 }
 
-function switchThumb(url, id, el) {
+async function switchThumb(url, id, el) {
   url = safeImageUrl(url);
   if (!url) return;
-  document.getElementById('d-hero').querySelectorAll('img.d-hero-img').forEach(i => i.remove());
+  const hero = document.getElementById('d-hero');
+  const previousImages = [...hero.querySelectorAll('img.d-hero-img')];
+  const previousThumb = document.querySelector('.thumb-item.on');
+  const previousOpacity = document.getElementById('d-emoji').style.opacity;
+  const previousGradient = document.getElementById('d-grad').style.display;
+  previousImages.forEach(i => i.remove());
   const emojiEl = document.getElementById('d-emoji');
   emojiEl.style.opacity = '0';
   const img = Object.assign(document.createElement('img'), { src: url, className: 'd-hero-img' });
@@ -416,17 +423,32 @@ function switchThumb(url, id, el) {
   document.getElementById('d-grad').style.display = '';
   document.querySelectorAll('.thumb-item').forEach(t => t.classList.remove('on'));
   el.classList.add('on');
-  api('/api/bilder/' + id + '/haupt', { method: 'PUT' }).catch(() => {});
+  try {
+    await api('/api/bilder/' + Number(id) + '/haupt', { method: 'PUT' });
+  } catch (_) {
+    img.remove();
+    previousImages.forEach(i => hero.prepend(i));
+    emojiEl.style.opacity = previousOpacity;
+    document.getElementById('d-grad').style.display = previousGradient;
+    el.classList.remove('on');
+    previousThumb?.classList.add('on');
+    toast('Hauptbild konnte nicht geändert werden', 'err');
+  }
 }
 window.switchThumb = switchThumb;
 
 async function delThumb(e, id) {
   e.stopPropagation();
   if (!confirm('Bild löschen?')) return;
-  await api('/api/bilder/' + id, { method: 'DELETE' }).catch(err => toast(err.message, 'err'));
-  S.current = await api('/api/rezepte/' + S.current.id);
-  renderDetail(S.current);
-  toast('Bild gelöscht', 'ok');
+  try {
+    await api('/api/bilder/' + Number(id), { method: 'DELETE' });
+    S.current = await api('/api/rezepte/' + Number(S.current.id));
+    renderDetail(S.current);
+    toast('Bild gelöscht', 'ok');
+  } catch (err) {
+    toast(err.message, 'err');
+    return;
+  }
 }
 window.delThumb = delThumb;
 
@@ -464,10 +486,15 @@ window.addThumbUrl = addThumbUrl;
 // ── Delete / edit ─────────────────────────────────────────────────────────────
 async function deleteCurrent() {
   if (!S.current || !confirm(`"${S.current.titel}" löschen?`)) return;
-  await api('/api/rezepte/' + S.current.id, { method: 'DELETE' });
-  toast('Rezept gelöscht', 'ok');
-  closeOverlay('ov-detail');
-  loadGrid();
+  try {
+    await api('/api/rezepte/' + Number(S.current.id), { method: 'DELETE' });
+    toast('Rezept gelöscht', 'ok');
+    closeOverlay('ov-detail');
+    loadGrid({ refreshHistory: true });
+    window.refreshHistory?.();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
 }
 window.deleteCurrent = deleteCurrent;
 
