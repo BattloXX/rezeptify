@@ -144,6 +144,8 @@ tar -czf uploads_backup_$(date +%Y%m%d).tar.gz static/uploads/
 
 ## Reverse Proxy (nginx/CloudPanel)
 
+CloudPanel cached JavaScript und CSS unter `/static/` für zehn Jahre. Die App versioniert deshalb alle lokalen JS- und CSS-Asset-URLs selbst mit `?v=<Asset-Hash>`, einschließlich der Modul-Imports. `/service-worker` (bewusst ohne `.js`-Endung) muss an die App weitergereicht werden; die unten gezeigte `location /` erledigt das bereits.
+
 Alle App-Pfade müssen am lokalen ASGI-Port ankommen. OAuth registriert am Domain-Root `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp` sowie `/authorize`, `/token`, `/register` und `/revoke`. Auch `/mcp` und `/mcp/login` müssen weitergereicht werden. Eine CloudPanel-Regel, die `/.well-known/` selbst beantwortet, verhindert die OAuth-Anmeldung.
 
 Beispiel für den CloudPanel-Vhost (innerhalb des bestehenden `server`-Blocks; vorhandene Locations zusammenführen/ersetzen, Port gegebenenfalls anpassen). Eine benötigte ACME-Challenge-Location beibehalten; sie darf die OAuth-Discovery nicht abfangen:

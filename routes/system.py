@@ -6,12 +6,14 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from auth import require_auth
 import auth
 import config
 from db import SCHEMA_VERSION, get_db
 from services.update_service import run_update
+from services.asset_version import get_asset_version
 
 logger = logging.getLogger(__name__)
 public_router = APIRouter()
@@ -103,6 +105,12 @@ def _public_error(row: dict) -> dict:
 def public_config():
     return {"auth_enabled": bool(auth.AUTH_ENABLED), "version": _app_version(),
             "update_im_browser": bool(_admin_password())}
+
+
+@public_router.get("/api/asset-version")
+def public_asset_version():
+    return JSONResponse({"asset_version": get_asset_version()},
+                        headers={"Cache-Control": "no-store"})
 
 
 @public_router.get("/api/health")

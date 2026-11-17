@@ -23,10 +23,57 @@ export const S = {
   debT: null,
 };
 
-function registerServiceWorker() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
-  }
+let reloadStarted = false;
+let serviceWorkerStarted = false;
+
+function reloadForUpdate() {
+  if (reloadStarted) return;
+  reloadStarted = true;
+  location.reload();
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || serviceWorkerStarted) return;
+  serviceWorkerStarted = true;
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController) reloadForUpdate();
+  });
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.filter(reg => new URL(reg.scope).pathname.endsWith('/static/'))
+      .map(reg => reg.unregister()));
+    const reg = await navigator.serviceWorker.register('/service-worker', {
+      scope: '/', updateViaCache: 'none',
+    });
+    await reg.update();
+  } catch (_) {}
+}
+
+function watchAssetVersion() {
+  const current = document.querySelector('meta[name="rezeptify-asset-version"]')?.content;
+  if (!current) return;
+  let lastCheck = null;
+  const check = async () => {
+    const now = Date.now();
+    if (lastCheck !== null && now - lastCheck < 5 * 60 * 1000) return;
+    lastCheck = now;
+    try {
+      const response = await fetch('/api/asset-version', { cache: 'no-store' });
+      if (!response.ok) return;
+      const { asset_version: target } = await response.json();
+      if (typeof target !== 'string' || !target || target === current || reloadStarted) return;
+      try {
+        if (sessionStorage.getItem('rezeptify-asset-reload') === target) return;
+        sessionStorage.setItem('rezeptify-asset-reload', target);
+      } catch (_) {}
+      reloadForUpdate();
+    } catch (_) {}
+  };
+  check();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') check();
+  });
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -230,6 +277,7 @@ window.openEditForm  = openEditForm;
 
 // ── DOMContentLoaded ──────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  watchAssetVersion();
   document.getElementById('startup-retry-btn').addEventListener('click', startup);
   document.getElementById('login-pwd')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
