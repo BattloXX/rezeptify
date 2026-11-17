@@ -1,16 +1,18 @@
 """Rezeptify v2.0 — FastAPI entry point."""
+import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from config import BASE_DIR, UPLOAD_DIR, APP_TITLE, DEBUG
 from db import get_db, init_db
 from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system, mcp_auth, aehnlich
 from mcp_server.server import build_production_http_app, get_production_oauth_provider
+from services.asset_version import get_asset_version, javascript_files
 
 logger = logging.getLogger(__name__)
 mcp_http_app = build_production_http_app()
@@ -121,6 +123,30 @@ app.mount("/mcp", mcp_http_app)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+@app.get("/service-worker")
+def service_worker():
+    source = (BASE_DIR / "static/sw.js").read_text(encoding="utf-8")
+    return Response(
+        source.replace("__ASSET_VERSION__", get_asset_version()),
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+    )
+
+
 @app.get("/{full_path:path}")
 def spa(full_path: str):
-    return FileResponse(str(BASE_DIR / "static" / "index.html"))
+    token = get_asset_version()
+    html = (BASE_DIR / "static/index.html").read_text(encoding="utf-8")
+    for asset in ("/static/css/styles.css", "/static/js/app.js"):
+        html = html.replace(asset, f"{asset}?v={token}")
+    imports = {
+        "/" + path.relative_to(BASE_DIR).as_posix():
+        "/" + path.relative_to(BASE_DIR).as_posix() + f"?v={token}"
+        for path in javascript_files(BASE_DIR)
+    }
+    import_map = json.dumps({"imports": imports}).replace("<", "\\u003c")
+    html = html.replace('<script type="module"',
+                        f'<script type="importmap">{import_map}</script>\n<script type="module"', 1)
+    html = html.replace("</head>",
+                        f'<meta name="rezeptify-asset-version" content="{token}">\n</head>', 1)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})

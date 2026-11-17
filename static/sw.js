@@ -1,64 +1,44 @@
-const CACHE = 'rezeptify-v6';
-const SHELL = [
-  '/',
-  '/static/manifest.json',
-  '/static/css/styles.css',
-  '/static/js/app.js',
-  '/static/js/api.js',
-  '/static/js/utils.js',
-  '/static/js/views/home.js',
-  '/static/js/views/detail.js',
-  '/static/js/views/form.js',
-  '/static/js/views/import.js',
-  '/static/js/views/buch.js',
-  '/static/js/views/bot.js',
-  '/static/js/views/einkauf.js',
-  '/static/js/views/error-log.js',
-  '/static/js/views/kochmodus.js',
-  '/static/js/views/system.js',
-  '/static/js/views/update-log.js',
-  '/static/js/views/wochenplan.js',
-];
+const CACHE = 'rezeptify-__ASSET_VERSION__';
+const SHELL = ['/', '/static/manifest.json'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(cache => Promise.allSettled(SHELL.map(u => cache.add(u)))));
-  self.skipWaiting();
+  e.waitUntil(caches.open(CACHE).then(cache =>
+    Promise.allSettled(SHELL.map(url => cache.add(new Request(url, { cache: 'no-store' })))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks =>
-    Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))
-  ));
-  self.clients.claim();
+  e.waitUntil(caches.keys().then(keys =>
+    Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))
+  ).then(() => self.clients.claim()));
 });
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  if (url.origin !== self.location.origin) return;
+  if (e.request.method !== 'GET' || url.origin !== self.location.origin
+      || url.pathname.startsWith('/api/') || url.pathname.startsWith('/mcp')
+      || url.pathname.startsWith('/static/uploads/') || url.pathname === '/service-worker') return;
 
-  // Never cache API calls or uploads
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/static/uploads/')) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
-
-  // Navigation: network first, fall back to cached shell
   if (e.request.mode === 'navigate') {
-    e.respondWith(
-      fetch(e.request).catch(() => caches.match('/'))
-    );
+    e.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        const response = await fetch(e.request, { cache: 'no-store' });
+        if (response.ok) await cache.put('/', response.clone()).catch(() => {});
+        return response;
+      } catch (_) {
+        return await cache.match('/') || Response.error();
+      }
+    })());
     return;
   }
 
-  // Static assets: network first so deployed fixes are visible immediately;
-  // retain the cached response only as an offline fallback.
-  e.respondWith(
-    fetch(e.request).then(res => {
-      if (res.ok && e.request.method === 'GET') {
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-      }
-      return res;
-    }).catch(() => caches.match(e.request))
-  );
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(e.request);
+    if (cached) return cached;
+    const response = await fetch(e.request);
+    if (response.ok) await cache.put(e.request, response.clone()).catch(() => {});
+    return response;
+  })());
 });
