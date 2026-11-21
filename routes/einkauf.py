@@ -1,12 +1,13 @@
 """Authenticated shopping-list endpoints."""
 import time
 from decimal import Decimal
+from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth import require_auth
 from db import get_db, parse_json_field
 from services.einkauf_sync import (
-    ListeNichtGefunden, aenderungen_seit, apply_ops, parse_hlc, rang_zwischen,
+    ListeNichtGefunden, _entry, aenderungen_seit, apply_ops, parse_hlc, rang_zwischen,
     server_hlc, server_op, standard_liste,
 )
 from services.shopping_service import merge_or_add, zutaten_fuer_einkauf
@@ -174,3 +175,122 @@ def aufraeumen():
                 apply_ops(cur, liste, [server_op("erledigte_loeschen", None, {"eintraege": entries[start:start + 500]})])
             cur.execute("SELECT seq FROM einkaufslisten WHERE uuid=%s", (liste,))
             return {"geloescht": cur.fetchone()["seq"] - before}
+
+
+def _uuid_liste(cur, liste):
+    if liste is None:
+        liste = standard_liste(cur)
+    try:
+        if not isinstance(liste, str) or str(UUID(liste)) != liste:
+            raise ValueError()
+    except ValueError:
+        raise HTTPException(404, "Liste nicht gefunden")
+    cur.execute("SELECT seq FROM einkaufslisten WHERE uuid=%s FOR UPDATE", (liste,))
+    if not cur.fetchone():
+        raise HTTPException(404, "Liste nicht gefunden")
+    return liste
+
+
+def _uuid_existing(cur, ident):
+    try:
+        if str(UUID(ident)) != ident:
+            raise ValueError()
+    except ValueError:
+        raise HTTPException(404, "Eintrag nicht gefunden")
+    cur.execute("""SELECT liste_uuid FROM einkaufsliste_eintraege WHERE uuid=%s
+        UNION SELECT liste_uuid FROM einkauf_aliase WHERE alt_uuid=%s""", (ident, ident))
+    found = cur.fetchone()
+    if not found:
+        raise HTTPException(404, "Eintrag nicht gefunden")
+    liste = _uuid_liste(cur, found["liste_uuid"])
+    _, row = _entry(cur, ident, liste)
+    if not row or row["geloescht_am"]:
+        raise HTTPException(404, "Eintrag nicht gefunden")
+    server_hlc(max(row[key] for key in ("hlc_inhalt", "hlc_menge", "hlc_status", "hlc_position")))
+    return liste, row
+
+
+def _uuid_apply(cur, liste, ops):
+    results = apply_ops(cur, liste, ops)["ergebnisse"]
+    for result in results:
+        if result["ergebnis"] == "abgelehnt":
+            raise HTTPException(400, result["grund"])
+    return results
+
+
+@router.get("/api/einkauf/eintraege")
+def get_uuid_eintraege(liste: str | None = None, erledigte: bool = False):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            liste = _uuid_liste(cur, liste)
+            cur.execute("""SELECT * FROM einkaufsliste_eintraege WHERE liste_uuid=%s
+                AND geloescht_am IS NULL AND (%s OR erledigt=0) ORDER BY erledigt, BINARY rang, id""",
+                        (liste, erledigte))
+            return {"eintraege": [_serialize(row) for row in cur.fetchall()]}
+
+
+@router.post("/api/einkauf/eintraege", status_code=201)
+def add_uuid_eintraege(body: dict):
+    entries = body.get("eintraege")
+    allowed = {"name", "menge", "einheit", "menge_text", "notiz"}
+    if not isinstance(entries, list) or not 1 <= len(entries) <= 100:
+        raise HTTPException(400, "1 bis 100 Einträge erforderlich")
+    if any(not isinstance(entry, dict) or set(entry) - allowed for entry in entries):
+        raise HTTPException(400, "Ungültige Eintragsdaten")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            liste = _uuid_liste(cur, body.get("liste"))
+            rows = []
+            for entry in entries:
+                ident = str(uuid4())
+                result = _uuid_apply(cur, liste, [server_op("anlegen", ident, {**entry, "manuell": True})])[0]
+                cur.execute("SELECT * FROM einkaufsliste_eintraege WHERE uuid=%s FOR UPDATE", (result["eintrag_uuid"],))
+                row = _serialize(cur.fetchone())
+                if result["eintrag_uuid"] != ident:
+                    row["zusammengefuehrt"] = True
+                rows.append(row)
+            return {"eintraege": rows}
+
+
+@router.patch("/api/einkauf/eintraege/{ident}")
+def update_uuid_eintrag(ident: str, body: dict):
+    allowed = {"name", "notiz", "menge", "einheit", "menge_text", "erledigt"}
+    if not body or set(body) - allowed:
+        raise HTTPException(400, "Ungültige Eintragsdaten")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            liste, row = _uuid_existing(cur, ident)
+            ops = []
+            content = {key: body[key] for key in ("name", "notiz") if key in body}
+            if content:
+                ops.append(server_op("inhalt_setzen", row["uuid"], content))
+            if any(key in body for key in ("menge", "einheit", "menge_text")):
+                ops.append(server_op("menge_setzen", row["uuid"],
+                                     {key: body.get(key, row[key]) for key in ("menge", "einheit", "menge_text")}))
+            if "erledigt" in body:
+                ops.append(server_op("status_setzen", row["uuid"], {"erledigt": body["erledigt"]}))
+            _uuid_apply(cur, liste, ops)
+            cur.execute("SELECT * FROM einkaufsliste_eintraege WHERE uuid=%s FOR UPDATE", (row["uuid"],))
+            return _serialize(cur.fetchone())
+
+
+@router.delete("/api/einkauf/eintraege/{ident}")
+def delete_uuid_eintrag(ident: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            liste, row = _uuid_existing(cur, ident)
+            _uuid_apply(cur, liste, [server_op("loeschen", row["uuid"], {})])
+    return {"ok": True}
+
+
+@router.post("/api/einkauf/erledigte-loeschen")
+def clear_uuid_erledigte(body: dict):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            liste = _uuid_liste(cur, body.get("liste"))
+            cur.execute("""SELECT uuid, hlc_status FROM einkaufsliste_eintraege
+                WHERE liste_uuid=%s AND erledigt=1 AND geloescht_am IS NULL FOR UPDATE""", (liste,))
+            entries = list(cur.fetchall())
+            for start in range(0, len(entries), 500):
+                _uuid_apply(cur, liste, [server_op("erledigte_loeschen", None, {"eintraege": entries[start:start + 500]})])
+            return {"geloescht": len(entries)}

@@ -100,7 +100,9 @@ def test_mounted_mcp_registers_recipe_read_and_update_tools(client, monkeypatch)
 
     assert response.status_code == 200
     names = {tool["name"] for tool in _sse_result(response)["tools"]}
-    assert {"get_recipe", "update_recipe"} <= names
+    assert {"get_recipe", "update_recipe", "get_shopping_list", "add_to_shopping_list",
+            "add_recipe_to_shopping_list", "add_week_plan_to_shopping_list",
+            "update_shopping_item", "remove_shopping_item", "clear_done_shopping_items"} <= names
 
 
 def test_rest_api_remains_public_when_rest_auth_is_disabled(client):
@@ -128,9 +130,12 @@ def test_tools_list_has_annotations(client, monkeypatch):
     for name, tool in tools.items():
         assert tool["description"].strip(), name
         assert tool["annotations"] == {
-            "readOnlyHint": name not in {"add_recipe", "update_recipe"},
-            "destructiveHint": False,
-            "idempotentHint": name != "add_recipe",
+            "readOnlyHint": name not in {"add_recipe", "update_recipe", "add_to_shopping_list",
+                "add_recipe_to_shopping_list", "add_week_plan_to_shopping_list",
+                "update_shopping_item", "remove_shopping_item", "clear_done_shopping_items"},
+            "destructiveHint": name in {"remove_shopping_item", "clear_done_shopping_items"},
+            "idempotentHint": name not in {"add_recipe", "add_to_shopping_list",
+                "add_recipe_to_shopping_list", "add_week_plan_to_shopping_list"},
             "openWorldHint": False,
         }
 
@@ -281,3 +286,37 @@ def test_tools_work_when_rest_auth_is_enabled(client, monkeypatch):
     session_id = _initialize(client, headers).headers.get("mcp-session-id")
     result = _call_tool(client, headers, session_id, 2, "list_tags", {})
     assert not result.get("isError"), result
+
+
+def test_shopping_tools_end_to_end(client, monkeypatch):
+    import mcp_server.auth as mcp_auth
+    monkeypatch.setattr(mcp_auth, "MCP_API_TOKEN", "test-mcp-token")
+    headers = {"Authorization": "Bearer test-mcp-token"}
+
+    def call(name, arguments):
+        result = _call_tool(client, headers, None, 1, name, arguments)
+        assert not result.get("isError"), result
+        if "structuredContent" in result:
+            structured = result["structuredContent"]
+            return structured.get("result", structured)
+        return json.loads(result["content"][0]["text"])
+
+    added = call("add_to_shopping_list", {"items": [
+        {"name": "Kartoffeln", "quantity": 2, "unit": "kg", "note": "festkochend"},
+    ]})
+    listed = call("get_shopping_list", {})
+    assert listed == added
+    assert listed[0]["quantity"] == 2 and listed[0]["note"] == 'festkochend'
+    updated = call("update_shopping_item", {"item_id": listed[0]["id"], "done": True})
+    assert updated["done"] is True
+    assert call("get_shopping_list", {}) == []
+    assert call("get_shopping_list", {"include_done": True})[0]["done"] is True
+    assert call("clear_done_shopping_items", {}) == {"geloescht": 1}
+    assert call("get_shopping_list", {"include_done": True}) == []
+
+
+def test_shopping_tool_rejects_oversized_batch(client):
+    result = _call_tool(client, {"Authorization": "Bearer test-mcp-token"}, None, 1,
+                        "add_to_shopping_list", {"items": [{"name": "Brot"}] * 101})
+    assert result.get("isError"), result
+    assert client.get('/api/einkauf/eintraege').json()["eintraege"] == []

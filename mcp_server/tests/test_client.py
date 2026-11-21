@@ -354,3 +354,120 @@ async def test_search_handles_empty_and_short_descriptions_and_missing_times():
     assert [r["beschreibung"] for r in results] == ["", "kurz", "x" * 160]
     assert [r["zeit_gesamt"] for r in results] == [0, 12, 0]
     assert all(r["favorit"] is False and r["bewertung"] is None for r in results)
+
+
+def _shopping_row():
+    return {"id": 42, "uuid": "7e33a52f-2517-4fd8-9ba7-6a9eb2275e7e", "name": "Milch",
+            "menge": 2, "einheit": "l", "menge_text": None, "notiz": "Bio", "erledigt": False,
+            "herkunft": [{"rezept_titel": "Pudding"}, {"rezept_titel": "Pudding"}]}
+
+
+@pytest.mark.asyncio
+async def test_shopping_client_crud_maps_fields_and_uuid():
+    requests = []
+    row = _shopping_row()
+    ident = row["uuid"]
+    expected = {"id": ident, "name": "Milch", "quantity": 2, "unit": "l",
+                "quantity_text": None, "note": "Bio", "done": False, "recipes": ["Pudding"]}
+
+    def handler(request):
+        requests.append(request)
+        assert request.headers["authorization"] == 'Bearer secret'
+        if request.method == 'GET':
+            return httpx.Response(200, json={"eintraege": [row]})
+        if request.method == 'PATCH':
+            assert json.loads(request.content) == {"erledigt": True, "notiz": None, "menge": 0}
+            return httpx.Response(200, json={**row, "erledigt": True, "notiz": None, "menge": 0})
+        if request.method == 'DELETE':
+            return httpx.Response(200, json={"ok": True})
+        if request.url.path.endswith('erledigte-loeschen'):
+            assert json.loads(request.content) == {"liste": None}
+            return httpx.Response(200, json={"geloescht": 1})
+        assert json.loads(request.content) == {"liste": None, "eintraege": [
+            {"name": "Milch", "menge": 2, "einheit": "l", "notiz": "Bio"},
+        ]}
+        return httpx.Response(201, json={"eintraege": [row]})
+
+    client = RezeptifyClient("https://rezeptify.example", "secret", transport=httpx.MockTransport(handler))
+    try:
+        assert await client.get_shopping_list(False) == [expected]
+        assert await client.get_shopping_list(True) == [expected]
+        assert await client.add_shopping_items([{"name": "Milch", "quantity": 2, "unit": "l", "note": "Bio"}]) == [expected]
+        assert await client.update_shopping_item(ident, done=True, note=None, quantity=0) == {
+            **expected, "done": True, "note": None, "quantity": 0,
+        }
+        assert await client.remove_shopping_item(ident) == {"ok": True}
+        assert await client.clear_done_shopping_items() == {"geloescht": 1}
+    finally:
+        await client.aclose()
+    assert [(r.method, r.url.path) for r in requests] == [
+        ('GET', '/api/einkauf/eintraege'), ('GET', '/api/einkauf/eintraege'),
+        ('POST', '/api/einkauf/eintraege'), ('PATCH', f'/api/einkauf/eintraege/{ident}'),
+        ('DELETE', f'/api/einkauf/eintraege/{ident}'), ('POST', '/api/einkauf/erledigte-loeschen'),
+    ]
+    assert dict(requests[0].url.params) == {"erledigte": "false"}
+    assert dict(requests[1].url.params) == {"erledigte": "true"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('servings', [None, 6])
+async def test_add_recipe_to_shopping_list_uses_requested_or_recipe_servings(servings):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if request.method == 'GET':
+            assert request.url.path == '/api/rezepte/7'
+            return httpx.Response(200, json={"portionen": 4})
+        assert request.url.path == '/api/rezepte/7/zu-einkaufsliste'
+        assert json.loads(request.content) == {"portionen": 4 if servings is None else servings}
+        return httpx.Response(200, json={"eintraege": [_shopping_row()]})
+
+    client = RezeptifyClient("https://rezeptify.example", "secret", transport=httpx.MockTransport(handler))
+    try:
+        items = await client.add_recipe_to_shopping_list(7, servings)
+        assert items[0]["id"] == _shopping_row()["uuid"]
+        assert items[0]["recipes"] == ['Pudding']
+    finally:
+        await client.aclose()
+    assert len(requests) == (2 if servings is None else 1)
+
+
+@pytest.mark.asyncio
+async def test_add_week_plan_to_shopping_list_reads_resulting_items():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if request.method == 'POST':
+            assert request.url.path == '/api/wochenplan/einkaufsliste'
+            assert json.loads(request.content) == {"von": "2026-11-21", "bis": "2026-11-27"}
+            return httpx.Response(200, json={"anzahl": 1})
+        assert request.url.path == '/api/einkauf/eintraege'
+        return httpx.Response(200, json={"eintraege": [_shopping_row()]})
+
+    client = RezeptifyClient("https://rezeptify.example", "secret", transport=httpx.MockTransport(handler))
+    try:
+        items = await client.add_week_plan_to_shopping_list('2026-11-21', '2026-11-27')
+        assert items[0]["name"] == 'Milch' and items[0]["quantity"] == 2
+    finally:
+        await client.aclose()
+    assert len(requests) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('method,args,kwargs', [
+    ('get_shopping_list', [False], {}), ('add_shopping_items', [[{"name": "Brot"}]], {}),
+    ('update_shopping_item', ['missing'], {"done": True}), ('remove_shopping_item', ['missing'], {}),
+    ('clear_done_shopping_items', [], {}), ('add_recipe_to_shopping_list', [7, 4], {}),
+    ('add_recipe_to_shopping_list', [7, None], {}),
+    ('add_week_plan_to_shopping_list', ['2026-11-21', '2026-11-27'], {}),
+])
+async def test_shopping_client_surfaces_api_errors(method, args, kwargs):
+    client = RezeptifyClient("https://rezeptify.example", "secret", transport=httpx.MockTransport(
+        lambda request: httpx.Response(404, json={"detail": "Nicht gefunden"})))
+    try:
+        with pytest.raises(RuntimeError, match='404: Nicht gefunden'):
+            await getattr(client, method)(*args, **kwargs)
+    finally:
+        await client.aclose()

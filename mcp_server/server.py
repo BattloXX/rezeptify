@@ -5,7 +5,8 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
-from typing import Any
+from datetime import date
+from typing import Annotated, Any
 from urllib.parse import urlparse
 
 import httpx
@@ -53,6 +54,13 @@ class Ingredient(BaseModel):
     unit: str = ""
     name: str = Field(min_length=1)
     group: str | None = None
+
+
+class ShoppingItem(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    quantity: float | None = Field(default=None, allow_inf_nan=False)
+    unit: str | None = Field(default=None, max_length=32)
+    note: str | None = Field(default=None, max_length=255)
 
 
 def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -> None:
@@ -205,6 +213,96 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
     async def list_tags() -> list[str]:
         """List available recipe tags for searching and labeling recipes."""
         return await client.list_tags()
+
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    @_logged
+    async def get_shopping_list(include_done: bool = False) -> list[dict]:
+        """Read the shared shopping list, optionally including completed items.
+
+        Call this before changes to obtain item_id (the returned id). Changes
+        appear immediately on all devices.
+        """
+        return await client.get_shopping_list(include_done)
+
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
+    @_logged
+    async def add_to_shopping_list(items: Annotated[list[ShoppingItem], Field(min_length=1, max_length=100)]) -> list[dict]:
+        """Add up to 100 items to the shared shopping list.
+
+        Equal names with compatible units merge automatically, adding quantities.
+        Pass structured quantities: "2 kg Kartoffeln" becomes name="Kartoffeln",
+        quantity=2, unit="kg". First call get_shopping_list to inspect existing
+        items and their item_id. Changes appear immediately on all devices.
+        """
+        return await client.add_shopping_items([item.model_dump() for item in items])
+
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
+    @_logged
+    async def add_recipe_to_shopping_list(recipe_id: int, servings: int | None = None) -> list[dict]:
+        """Add a recipe's ingredients, scaled to servings (default: recipe servings).
+
+        Equal names with compatible units merge automatically, adding quantities.
+        First call get_shopping_list to inspect items and obtain their item_id
+        before changes. Changes appear immediately on all devices.
+        """
+        return await client.add_recipe_to_shopping_list(recipe_id, servings)
+
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
+    @_logged
+    async def add_week_plan_to_shopping_list(start_date: str, end_date: str) -> list[dict]:
+        """Add ingredients from the inclusive week-plan range (YYYY-MM-DD).
+
+        Equal names with compatible units merge automatically, adding quantities.
+        First call get_shopping_list to inspect items and obtain their item_id
+        before changes. Changes appear immediately on all devices.
+        """
+        if any(date.fromisoformat(value).isoformat() != value for value in (start_date, end_date)):
+            raise ValueError("Dates must use YYYY-MM-DD")
+        return await client.add_week_plan_to_shopping_list(start_date, end_date)
+
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    @_logged
+    async def update_shopping_item(
+        item_id: str, name: str | None = None, quantity: float | None = None,
+        unit: str | None = None, note: str | None = None, done: bool | None = None,
+    ) -> dict:
+        """Update an item; omitted or None fields stay unchanged, empty note clears it.
+
+        First call get_shopping_list to obtain item_id from the returned id.
+        Pass structured quantities, e.g. name="Kartoffeln", quantity=2, unit="kg".
+        Equal names with compatible units merge when added; quantities are added.
+        Changes appear immediately on all devices.
+        """
+        fields = {key: value for key, value in {
+            "name": name, "quantity": quantity, "unit": unit, "note": note, "done": done,
+        }.items() if value is not None}
+        return await client.update_shopping_item(item_id, **fields)
+
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False))
+    @_logged
+    async def remove_shopping_item(item_id: str) -> dict:
+        """Delete one shared item. First call get_shopping_list to obtain item_id.
+
+        Changes appear immediately on all devices.
+        """
+        return await client.remove_shopping_item(item_id)
+
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False))
+    @_logged
+    async def clear_done_shopping_items() -> dict:
+        """Delete all completed items from the shared shopping list.
+
+        First call get_shopping_list(include_done=True) to inspect completed
+        items and their item_id. Changes appear immediately on all devices.
+        """
+        return await client.clear_done_shopping_items()
 
 
 

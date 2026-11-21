@@ -165,7 +165,14 @@ Das Datenbankschema wird beim Start automatisch angelegt und bei Updates migrier
 
 Rezepte lassen sich aus einem KI-Chat heraus suchen, lesen, anlegen und ändern.
 Tools: `search_recipes`, `get_recipe`, `add_recipe`, `update_recipe`,
-`list_categories`, `list_tags`, `find_duplicate_recipes`. Die Suche verknüpft alle
+`list_categories`, `list_tags`, `find_duplicate_recipes`.
+Einkaufsliste: `get_shopping_list`, `add_to_shopping_list`,
+`add_recipe_to_shopping_list`, `add_week_plan_to_shopping_list`,
+`update_shopping_item`, `remove_shopping_item`, `clear_done_shopping_items`.
+Gleiche Namen mit passenden Einheiten werden beim Hinzufügen zusammengeführt
+(Mengen addiert). Mengen strukturiert übergeben und vor Änderungen die UUID mit
+`get_shopping_list` lesen. Änderungen erscheinen sofort auf allen Geräten.
+Die Suche verknüpft alle
 Wörter mit UND und durchsucht Titel, Beschreibung, Kategorie, Tags und Zutaten.
 `add_recipe` weist ähnliche Titel ab (`allow_duplicate=true` überschreibt das).
 Vor einer Änderung wird das Rezept mit
