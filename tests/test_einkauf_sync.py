@@ -428,3 +428,34 @@ def test_unbekannte_einheit_eigene_familie_und_menge_setzen_behaelt_einheit(clie
     assert len(rows) == 2
     assert float(rows[0]["menge"]) == 4 and rows[0]["einheit"] == "Bund"
     assert float(rows[1]["menge"]) == 1.5 and rows[1]["einheit"] == "kg"
+
+
+def test_rang_nach_waechst_nicht_bei_vielen_anhaengen():
+    from services.einkauf_sync import rang_nach, rang_zwischen
+    rang = None
+    ranks = []
+    for _ in range(5000):
+        rang = rang_nach(rang)
+        ranks.append(rang)
+    assert ranks == sorted(ranks) and len(set(ranks)) == len(ranks)
+    assert max(len(r) for r in ranks) == 9
+    # Nach einem per rang_zwischen eingefügten Rang geht es weiterhin kurz weiter.
+    mitte = rang_zwischen(ranks[0], ranks[1])
+    assert rang_nach(mitte) > mitte
+    assert rang_nach("zzzzzzzzU") > "zzzzzzzzU"
+
+
+def test_anhaengen_ueber_400_eintraege(client):
+    from db import get_db
+    from services.einkauf_sync import apply_ops, standard_liste
+    from uuid import uuid4
+    base = 1700000000000
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            liste = standard_liste(cur)
+            ops = [{"op_id": str(uuid4()), "typ": "anlegen", "eintrag": str(uuid4()),
+                    "hlc": f"{base + i:013d}-0000-geraetA", "daten": {"name": f"Artikel {i}"}} for i in range(450)]
+            res = apply_ops(cur, liste, ops)
+            assert all(r["ergebnis"] == "ok" for r in res["ergebnisse"])
+            cur.execute("SELECT MAX(LENGTH(rang)) AS n FROM einkaufsliste_eintraege")
+            assert cur.fetchone()["n"] <= 9

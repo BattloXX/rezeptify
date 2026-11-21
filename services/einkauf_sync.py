@@ -98,6 +98,27 @@ def rang_initial(i):
     return result + "U"
 
 
+def rang_nach(a):
+    """Rank after a for appends: increments the 8-digit head instead of bisecting, so it never grows."""
+    if a is None:
+        return rang_initial(0)
+    _rang(a)
+    head = (a[:8] + "0" * 8)[:8]
+    value = 0
+    for char in head:
+        value = value * 62 + _DIGITS.index(char)
+    value = (value // 1024 + 1) * 1024
+    if value < 62 ** 8:
+        result = ""
+        for _ in range(8):
+            result = _DIGITS[value % 62] + result
+            value //= 62
+        result += "U"
+        if result > a:
+            return result
+    return rang_zwischen(a, None)
+
+
 def standard_liste(cur):
     cur.execute("SELECT uuid FROM einkaufslisten WHERE ist_standard=1 ORDER BY erstellt_am, uuid LIMIT 1")
     row = cur.fetchone()
@@ -325,7 +346,7 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
                         if rank is None:
                             cur.execute("SELECT rang FROM einkaufsliste_eintraege WHERE liste_uuid=%s AND rang IS NOT NULL ORDER BY BINARY rang DESC LIMIT 1 FOR UPDATE", (liste_uuid,))
                             last = cur.fetchone()
-                            rank = rang_zwischen(last["rang"] if last else None, None)
+                            rank = rang_nach(last["rang"] if last else None)
                         seq += 1
                         cur.execute("""INSERT INTO einkaufsliste_eintraege
                             (uuid,liste_uuid,name,name_norm,menge,einheit,menge_text,notiz,manuell,herkunft,rang,

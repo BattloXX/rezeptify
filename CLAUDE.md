@@ -43,6 +43,7 @@ journalctl --user -u rezeptify | grep "MCP "
 - `services/rate_limit.py`: database-backed AI quotas in `ki_nutzung`, shared across workers.
 - `services/duplicate_service.py`, `structured_recipe_service.py`: title similarity and deterministic recipe JSON validation.
 - `services/kochmodus_service.py`, `shopping_service.py`: cooking steps/timers and ingredient merging.
+- `services/einkauf_sync.py`: Op-basierter Einkaufslisten-Sync (HLC, feldweises LWW, Tombstones, Aliase, `seq` je Liste); alle Schreibwege der Liste laufen über `apply_ops`.
 - `services/update_service.py`, `backup_service.py`: fixed update workflow and private DB/config/upload backups.
 - `request_utils.py`: `client_ip()` trusts forwarded headers only from `TRUSTED_PROXIES` (loopback by default).
 - `auth.py`: REST Basic/bearer authentication and internal bridge scope check.
@@ -63,6 +64,7 @@ journalctl --user -u rezeptify | grep "MCP "
 - `/api/health` is public: version, database, mcp, status, schema_version; failures report degraded with HTTP 200.
 
 ## Key patterns
+- Never write `einkaufsliste_eintraege` directly; go through `services/einkauf_sync.apply_ops`.
 - Generate recipe slugs with `slug_utils.make_slug()` (normalized title plus recipe ID).
 - Serialize JSON columns on writes and parse them on reads with DB helpers (`zutaten`, `tags`, etc.).
 - Maintain `suchtext` on every write path changing title, description, category, tags or ingredients; use `build_suchtext()`.
