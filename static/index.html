@@ -398,10 +398,17 @@
 
     <!-- ── EINKAUF view ──────────────────────────────────────────────── -->
     <section id="view-einkauf" class="view">
-      <div class="shopping-header"><h2>Einkaufsliste</h2><button class="icon-pill" onclick="shareShopping()"><span class="material-symbols-outlined">share</span> Teilen</button></div>
+      <div class="shopping-header"><h2>Einkaufsliste</h2><select id="einkauf-liste" class="fc shopping-shop" aria-label="Einkaufsliste"></select><button id="einkauf-start" class="icon-pill" type="button">Einkaufen</button><button id="einkauf-exit" class="btn btn-ghost" type="button" hidden>Zurück</button><select id="einkauf-laden" class="fc shopping-shop" aria-label="Laden"><option value="">Kein Laden</option></select><button id="einkauf-manage" class="icon-pill" type="button">Einstellungen</button><button class="icon-pill" onclick="shareShopping()"><span class="material-symbols-outlined">share</span> Teilen</button></div>
+      <div id="einkauf-progress" hidden><label id="einkauf-progress-label" for="einkauf-progress-bar"></label><progress id="einkauf-progress-bar" max="1" value="0"></progress><button id="einkauf-finish" type="button" class="btn btn-accent">Einkauf abschließen</button><p id="einkauf-success" role="status" hidden>Alles im Wagen! <button id="einkauf-success-finish" type="button" class="btn btn-accent">Abschließen</button></p></div>
+      <div id="einkauf-status" class="shopping-status" role="status"></div>
       <form id="einkauf-add" class="shopping-add"><input id="einkauf-name" class="fc" placeholder="Eintrag hinzufügen…" autocomplete="off"><button class="btn btn-accent" type="submit"><span class="material-symbols-outlined">add</span> Hinzufügen</button></form>
+      <div id="einkauf-autocomplete" class="shopping-autocomplete" role="listbox" hidden></div>
+      <div id="einkauf-preview" class="shopping-preview" role="status" hidden></div>
+      <section id="einkauf-due" hidden><h3>Wieder fällig</h3><div id="einkauf-due-chips" class="shopping-chips"></div></section>
+      <aside id="einkauf-planned" class="shopping-plan-hint" hidden></aside>
       <div class="shopping-section"><h3>Offen</h3><div id="einkauf-open"></div></div>
-      <div class="shopping-section"><div class="shopping-done-head"><h3>Erledigt</h3><button id="einkauf-clean" class="btn btn-ghost" onclick="clearDone()" hidden>Erledigte löschen</button></div><div id="einkauf-done"></div></div>
+      <div id="einkauf-done-section" class="shopping-section"><div class="shopping-done-head"><h3 id="einkauf-done-title">Erledigt</h3><button id="einkauf-cart-toggle" class="btn btn-ghost" type="button" aria-expanded="false" aria-controls="einkauf-done" hidden>Im Wagen (0)</button><button id="einkauf-clean" class="btn btn-ghost" onclick="clearDone()" hidden>Erledigte löschen</button></div><div id="einkauf-done"></div></div>
+      <details id="einkauf-recent"><summary>Zuletzt gekauft</summary><div id="einkauf-recent-chips" class="shopping-chips"></div></details>
     </section>
 
     <section id="view-wochenplan" class="view">
@@ -463,6 +470,45 @@
     <div class="form-header"><span class="form-header-title">Update bestätigen</span><button class="form-header-close" onclick="closeOverlay('ov-system-update')">×</button></div>
     <div class="system-modal-body"><p>Vor dem Update wird ein lokales Backup erstellt. Bitte bestätige mit dem App-Passwort.</p><input id="system-update-pwd" type="password" class="fc" autocomplete="current-password" placeholder="Passwort"></div>
     <div class="form-footer"><button class="btn btn-ghost" onclick="closeOverlay('ov-system-update')">Abbrechen</button><button class="btn btn-accent" onclick="confirmSystemUpdate()">Update starten</button></div>
+  </div>
+</div>
+
+<div id="ov-einkauf-edit" class="overlay">
+  <form id="einkauf-edit" class="modal plan-modal" role="dialog" aria-modal="true" aria-labelledby="einkauf-edit-title">
+    <div class="form-header"><span id="einkauf-edit-title" class="form-header-title">Eintrag bearbeiten</span><button type="button" class="form-header-close" data-edit-cancel aria-label="Schließen">×</button></div>
+    <div class="plan-modal-body shopping-edit-body">
+      <label>Name<input id="einkauf-edit-name" class="fc" required maxlength="255"></label>
+      <label>Menge<input id="einkauf-edit-amount" class="fc" inputmode="decimal" placeholder="Zahl"></label>
+      <div class="shopping-units"><button type="button" data-unit="Stk" aria-pressed="false">Stk</button><button type="button" data-unit="g" aria-pressed="false">g</button><button type="button" data-unit="kg" aria-pressed="false">kg</button><button type="button" data-unit="ml" aria-pressed="false">ml</button><button type="button" data-unit="l" aria-pressed="false">l</button><button type="button" data-unit="Pkg" aria-pressed="false">Pkg</button><button type="button" data-unit="Bund" aria-pressed="false">Bund</button><button type="button" data-unit="Dose" aria-pressed="false">Dose</button><button type="button" data-unit="Becher" aria-pressed="false">Becher</button><button type="button" data-unit="Flasche" aria-pressed="false">Flasche</button></div>
+      <label>Einheit (frei eingeben)<input id="einkauf-edit-unit" class="fc" maxlength="32"></label>
+      <label>Freitext-Menge (statt Zahl)<input id="einkauf-edit-text" class="fc" maxlength="64" placeholder="z. B. 2–3"></label>
+      <label>Kategorie<select id="einkauf-edit-category" class="fc"></select></label>
+      <label>In andere Liste verschieben<select id="einkauf-edit-list" class="fc"><option value="">Auf dieser Liste lassen</option></select></label>
+      <label>Notiz<input id="einkauf-edit-note" class="fc" maxlength="255"></label>
+    </div>
+    <div class="form-footer"><button type="button" class="btn btn-ghost" data-edit-delete>Löschen</button><button type="button" class="btn btn-ghost" data-edit-cancel>Abbrechen</button><button class="btn btn-accent" type="submit">Speichern</button></div>
+  </form>
+</div>
+
+<div id="ov-einkauf-laeden" class="overlay">
+  <div class="modal plan-modal" role="dialog" aria-modal="true" aria-labelledby="einkauf-laeden-title">
+    <div class="form-header"><span id="einkauf-laeden-title" class="form-header-title">Listen, Läden &amp; Reihenfolge</span><button type="button" class="form-header-close" data-shops-close aria-label="Schließen">×</button></div>
+    <div class="plan-modal-body shopping-edit-body">
+      <section><h3>Listen</h3>
+        <form id="einkauf-list-new" class="shopping-add"><input id="einkauf-list-name" class="fc" maxlength="120" required placeholder="Neue Liste" aria-label="Neue Liste"><button class="btn btn-accent" type="submit">Neue Liste</button></form>
+        <form id="einkauf-list-form"><label>Aktuelle Liste umbenennen<input id="einkauf-list-rename" class="fc" maxlength="120" required></label><label><input id="einkauf-list-default" type="checkbox"> Standardliste</label><button class="btn btn-ghost" type="submit">Speichern</button><button id="einkauf-list-archive" class="btn btn-ghost" type="button">Archivieren</button></form>
+        <p id="einkauf-list-message" role="status"></p>
+      </section>
+      <form id="einkauf-shop-new" class="shopping-add"><input id="einkauf-shop-name" class="fc" maxlength="80" required placeholder="Neuer Laden" aria-label="Neuer Laden"><button class="btn btn-accent" type="submit">Anlegen</button></form>
+      <label>Laden verwalten<select id="einkauf-shop-edit" class="fc"></select></label>
+      <form id="einkauf-shop-form"><label>Name<input id="einkauf-shop-rename" class="fc" required maxlength="80"></label><label><input id="einkauf-shop-active" type="checkbox"> Aktiv</label><label><input id="einkauf-shop-default" type="checkbox"> Standard</label><button class="btn btn-ghost" type="submit">Speichern</button><button id="einkauf-shop-delete" class="btn btn-ghost" type="button">Löschen</button></form>
+      <p>Kategorien mit ↑ und ↓ ordnen.</p><div id="einkauf-shop-order"></div>
+      <button id="einkauf-shop-save-order" class="btn btn-accent" type="button">Reihenfolge speichern</button>
+      <section><h3>Vorrat</h3><div id="einkauf-pantry"></div>
+        <form id="einkauf-pantry-add" class="shopping-add"><input id="einkauf-pantry-name" class="fc" maxlength="255" required placeholder="Vorrat ergänzen" aria-label="Vorratsartikel"><button class="btn btn-ghost" type="submit">Ergänzen</button></form></section>
+      <section><h3>Ausgeblendete Vorschläge</h3><div id="einkauf-hidden"></div></section>
+      <p id="einkauf-shop-message" role="status"></p>
+    </div>
   </div>
 </div>
 

@@ -1,5 +1,6 @@
+import shoppingStore, { onAnyShoppingChange } from '../einkauf-store.js';
 import { api } from '../api.js';
-import { toast, x, safeImageUrl } from '../utils.js';
+import { toast, toastAction, x, safeImageUrl } from '../utils.js';
 import { openDetail } from './detail.js';
 
 let entries = [];
@@ -77,8 +78,15 @@ async function remove(id) {
 export async function createWeekShopping() {
   const days = week();
   try {
-    const result = await api('/api/wochenplan/einkaufsliste', { method: 'POST', body: JSON.stringify({ von: iso(days[0]), bis: iso(days[6]) }) });
+    await shoppingStore.init();
+    const target = shoppingStore.liste();
+    const result = await api('/api/wochenplan/einkaufsliste', { method: 'POST', body: JSON.stringify({ von: iso(days[0]), bis: iso(days[6]), liste: target }) });
     toast(`${result.anzahl} Einträge zur Einkaufsliste hinzugefügt`, 'ok');
+    await shoppingStore.init();
+    await onAnyShoppingChange();
+    if (result.vorrat?.length) toastAction(`${result.vorrat.map(item => item.name).join(', ')} vermutlich zuhause`, 'Trotzdem hinzufügen', () => {
+      for (const item of result.vorrat) shoppingStore.add(item.name, { menge_text:item.menge_text || null }, target);
+    });
     window.showView('einkauf');
   } catch (e) { toast(e.message, 'err'); }
 }

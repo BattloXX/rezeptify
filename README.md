@@ -42,6 +42,17 @@ Aktuelle Version: siehe Datei [`VERSION`](VERSION) bzw. die [Releases](https://g
 | 📅 **Wochenplanung** | Rezepte auf Tage und Mahlzeiten (Frühstück, Mittag, Abend, Snack) verteilen, daraus die Einkaufsliste erzeugen |
 | 🍽️ **„Was kochen wir?"** | Vorschläge aus den eigenen Rezepten nach Zutaten, Zeit, Kategorie, vegetarisch/vegan, Bewertung, Schwierigkeit oder „lange nicht gekocht" |
 
+### Einkaufsliste
+
+Mehrere benannte Listen funktionieren offline und synchronisieren Änderungen zwischen Geräten.
+Listen lassen sich wechseln, umbenennen und archivieren; Zutaten aus Rezepten und Wochenplänen
+werden zusammengeführt, Vorratsartikel übersprungen. Kategorien und Ladenreihenfolgen ordnen
+den Einkauf; Vorschläge und Autovervollständigung helfen beim Ergänzen.
+Der Einkaufsmodus bietet große Zeilen, einen eingeklappten Wagen, Fortschritt und Rückgängig;
+unterstützte Geräte halten den Bildschirm wach. Teilen gruppiert nach Kategorien.
+MCP-Einkaufstools akzeptieren `list_name` (ohne Angabe: Standardliste);
+`list_shopping_lists` zeigt verfügbare Listen, `get_shopping_suggestions` liefert Vorschläge.
+
 ### Betrieb
 
 | Feature | Beschreibung |
@@ -165,7 +176,14 @@ Das Datenbankschema wird beim Start automatisch angelegt und bei Updates migrier
 
 Rezepte lassen sich aus einem KI-Chat heraus suchen, lesen, anlegen und ändern.
 Tools: `search_recipes`, `get_recipe`, `add_recipe`, `update_recipe`,
-`list_categories`, `list_tags`, `find_duplicate_recipes`. Die Suche verknüpft alle
+`list_categories`, `list_tags`, `find_duplicate_recipes`.
+Einkaufsliste: `get_shopping_list`, `add_to_shopping_list`,
+`add_recipe_to_shopping_list`, `add_week_plan_to_shopping_list`,
+`update_shopping_item`, `remove_shopping_item`, `clear_done_shopping_items`.
+Gleiche Namen mit passenden Einheiten werden beim Hinzufügen zusammengeführt
+(Mengen addiert). Mengen strukturiert übergeben und vor Änderungen die UUID mit
+`get_shopping_list` lesen. Änderungen erscheinen sofort auf allen Geräten.
+Die Suche verknüpft alle
 Wörter mit UND und durchsucht Titel, Beschreibung, Kategorie, Tags und Zutaten.
 `add_recipe` weist ähnliche Titel ab (`allow_duplicate=true` überschreibt das).
 Vor einer Änderung wird das Rezept mit

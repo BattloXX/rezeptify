@@ -1,5 +1,6 @@
 import { api, apiFetch, setAuth, clearAuth, hasAuth } from './api.js';
 import { toast } from './utils.js';
+import shoppingStore from './einkauf-store.js';
 import { initHome, loadGrid, loadKats, loadTags } from './views/home.js';
 import { openDetail } from './views/detail.js';
 import { openNewForm, openEditForm, setupTagInp, setupClipboardPaste } from './views/form.js';
@@ -118,8 +119,10 @@ async function doLogin() {
   try {
     setAuth(pwd);
     await api('/api/kategorien');
-    await initApp();
+    await initApp(!offlineStartup);
+    offlineStartup = false;
     hideLogin();
+    shoppingStore.sync();
   } catch (err) {
     clearAuth();
     showLogin(err.status === 401 ? 'Falsches Passwort' : 'Server nicht erreichbar: ' + err.message);
@@ -130,9 +133,11 @@ async function doLogin() {
 window.doLogin = doLogin;
 
 // ── App init ──────────────────────────────────────────────────────────────────
-async function initApp() {
+async function initApp(followDeepLink = true) {
   let loadError = null;
-  const captureError = event => { loadError ||= event.detail; };
+  const captureError = event => {
+    if (event.detail.requestPath !== '/api/einkauf/sync') loadError ||= event.detail;
+  };
   window.addEventListener('api:error', captureError);
   try {
     await Promise.all([loadKats(), loadTags()]);
@@ -145,7 +150,7 @@ async function initApp() {
   setupTagInp();
   setupClipboardPaste();
   registerServiceWorker();
-  handleDeepLink();
+  if (followDeepLink) handleDeepLink();
 }
 
 function showStartupError(err) {
@@ -155,12 +160,19 @@ function showStartupError(err) {
   document.getElementById('startup-error').classList.add('on');
 }
 
+let offlineStartup = false;
+let startupRunning = false;
+
 async function startup() {
+  if (startupRunning) return;
+  startupRunning = true;
   const btn = document.getElementById('startup-retry-btn');
   btn.disabled = true;
   const hadAuth = hasAuth();
   let configLoaded = false;
   try {
+    await shoppingStore.init();
+    if (navigator.onLine === false) throw new TypeError('Offline');
     const response = await fetch('/api/config');
     if (response.status === 404) {
       authEnabled = null;
@@ -173,18 +185,30 @@ async function startup() {
     configLoaded = true;
     if (authEnabled === false) clearAuth();
     else await api('/api/kategorien');
-    await initApp();
+    await initApp(!offlineStartup);
+    offlineStartup = false;
     hideLogin();
+    shoppingStore.sync();
   } catch (err) {
-    if (configLoaded && authEnabled !== false && err.status === 401) {
+    if (navigator.onLine === false || (!configLoaded && err instanceof TypeError)) {
+      const firstOfflineStart = !offlineStartup;
+      offlineStartup = true;
+      hideLogin();
+      if (firstOfflineStart) showView('einkauf');
+      registerServiceWorker();
+      toast('Offline – Einkaufsliste verfügbar');
+    } else if (configLoaded && authEnabled !== false && err.status === 401) {
       showLogin(hadAuth ? 'Bitte erneut anmelden' : '');
     } else {
       showStartupError(err);
     }
   } finally {
+    startupRunning = false;
     btn.disabled = false;
   }
 }
+
+window.addEventListener('online', () => { if (offlineStartup) startup(); });
 
 function handleDeepLink() {
   const m = window.location.pathname.match(/^\/rezept\/([^/]+)$/);
@@ -288,6 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initBot();
   initKochmodus();
   initEinkauf();
+  shoppingStore.init();
   initWochenplan();
   initSystem();
   initUpdateLog();

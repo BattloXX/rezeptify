@@ -28,6 +28,23 @@ export function toast(msg, type = '') {
   _toastTimer = setTimeout(() => el.classList.remove('on'), 3500);
 }
 
+export function toastAction(msg, label, fn) {
+  const el = document.getElementById('toast');
+  clearTimeout(_toastTimer);
+  el.textContent = msg + ' ';
+  el.className = 'toast on';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = label;
+  button.addEventListener('click', () => {
+    clearTimeout(_toastTimer);
+    el.classList.remove('on');
+    try { fn(); } catch (e) { toast(e.message, 'err'); }
+  }, { once: true });
+  el.append(button);
+  _toastTimer = setTimeout(() => el.classList.remove('on'), 5000);
+}
+
 // ── Image URL dialog ─────────────────────────────────────────────────────────
 let imageUrlResolver = null;
 

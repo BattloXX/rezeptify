@@ -8,7 +8,7 @@ def recipe(client, title, ingredients, portions=4):
 
 
 def test_create_move_and_delete_plan_entry(client):
-    rid = recipe(client, "Plan-Rezept", [{"menge": "100", "einheit": "g", "name": "Mehl"}])
+    rid = recipe(client, "Plan-Rezept", [{"menge": "100", "einheit": "g", "name": "Reis"}])
     created = client.post("/api/wochenplan", json={"rezept_id": rid, "datum": "2026-09-07", "mahlzeit": "abend", "portionen": 2})
     assert created.status_code == 201
     eid = created.json()["id"]
@@ -24,15 +24,15 @@ def test_create_move_and_delete_plan_entry(client):
 
 
 def test_week_plan_aggregates_scaled_ingredients(client):
-    first = recipe(client, "Erstes", [{"menge": "100", "einheit": "g", "name": "Mehl"}], 4)
-    second = recipe(client, "Zweites", [{"menge": "200", "einheit": "g", "name": "Mehl"}, {"menge": "1", "einheit": "Stk", "name": "Ei"}], 2)
+    first = recipe(client, "Erstes", [{"menge": "100", "einheit": "g", "name": "Reis"}], 4)
+    second = recipe(client, "Zweites", [{"menge": "200", "einheit": "g", "name": "Reis"}, {"menge": "1", "einheit": "Stk", "name": "Ei"}], 2)
     assert client.post("/api/wochenplan", json={"rezept_id": first, "datum": "2026-09-07", "mahlzeit": "abend", "portionen": 8}).status_code == 201
     assert client.post("/api/wochenplan", json={"rezept_id": second, "datum": "2026-09-08", "mahlzeit": "mittag"}).status_code == 201
     result = client.post("/api/wochenplan/einkaufsliste", json={"von": "2026-09-07", "bis": "2026-09-13"})
     assert result.status_code == 200
     assert result.json()["anzahl"] == 3
     entries = client.get("/api/einkaufsliste").json()["eintraege"]
-    flour = next(entry for entry in entries if entry["name"] == "Mehl")
+    flour = next(entry for entry in entries if entry["name"] == "Reis")
     assert flour["menge"] == 400
     assert flour["einheit"] == "g"
     assert len(flour["herkunft"]) == 2

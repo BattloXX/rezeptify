@@ -95,7 +95,7 @@ def _decimal_amount(value):
         return None
 
 
-def zutaten_fuer_einkauf(rezept, portionen):
+def zutaten_fuer_einkauf(rezept, portionen, cur=None, vorrat=None):
     """Return scaled, merge-ready shopping entries for one recipe row."""
     base_portionen = rezept.get("portionen") or 0
     faktor = portionen / base_portionen if base_portionen else 1
@@ -118,52 +118,46 @@ def zutaten_fuer_einkauf(rezept, portionen):
             "herkunft": [{"rezept_id": rezept["id"], "rezept_titel": rezept["titel"],
                            "menge": scaled, "einheit": zutat.get("einheit") or ""}],
         })
+    if cur is not None:
+        cur.execute("SELECT name_norm FROM einkauf_artikel WHERE vorrat=1")
+        pantry = {row["name_norm"] for row in cur.fetchall()}
+        kept = []
+        for item in items:
+            if normalize_name(item["name"]) in pantry:
+                if vorrat is not None:
+                    origin = item["herkunft"][0]
+                    vorrat.append({"name": item["name"], "menge_text": " ".join(
+                        str(part) for part in (origin["menge"], item["einheit"]) if part)})
+            else:
+                kept.append(item)
+        return kept
     return items
 
 
-def merge_or_add(cur, eintraege):
-    """Persist entries, merging only exact names and recognised unit families."""
+def merge_or_add(cur, eintraege, liste=None):
+    """Persist entries through the sync engine and return the resulting rows."""
+    from uuid import uuid4
+    from db import parse_json_field
+    from services.einkauf_sync import apply_ops, server_op, standard_liste
+
     result = []
+    liste = liste or standard_liste(cur)
     for entry in eintraege:
-        name = str(entry.get("name") or "").strip()
-        menge_text = entry.get("menge_text")
-        unit = (entry.get("einheit") or "").strip() or None
         amount = entry.get("menge")
         origin = entry.get("herkunft") or []
         if isinstance(origin, dict):
             origin = [origin]
-        family, multiplier = normalize_unit(unit), _unit_multiplier(unit)
-        decimal_amount = _decimal_amount(amount) if isinstance(amount, str) else (Decimal(str(amount)) if amount is not None else None)
-        can_merge = bool(name and family and decimal_amount is not None and not menge_text)
-        existing = None
-        if can_merge:
-            cur.execute("SELECT * FROM einkaufsliste_eintraege WHERE erledigt=0 AND menge_text IS NULL")
-            for row in cur.fetchall():
-                if normalize_name(row["name"]) == normalize_name(name) and normalize_unit(row["einheit"]) == family:
-                    existing = row
-                    break
-        if existing:
-            old_multiplier = _unit_multiplier(existing["einheit"])
-            total = Decimal(str(existing["menge"])) * old_multiplier + decimal_amount * multiplier
-            # Store in the canonical base unit when unit spellings differ.
-            stored_unit = existing["einheit"] if old_multiplier == Decimal("1") else family
-            stored_amount = total if stored_unit == family else total / old_multiplier
-            old_origin = existing.get("herkunft")
-            if isinstance(old_origin, str):
-                try: old_origin = json.loads(old_origin)
-                except json.JSONDecodeError: old_origin = []
-            cur.execute("""UPDATE einkaufsliste_eintraege
-                SET menge=%s, einheit=%s, herkunft=%s WHERE id=%s""",
-                (stored_amount, stored_unit, json.dumps((old_origin or []) + origin, ensure_ascii=False), existing["id"]))
-            existing.update(menge=stored_amount, einheit=stored_unit, herkunft=(old_origin or []) + origin)
-            result.append(existing)
-            continue
-        cur.execute("""INSERT INTO einkaufsliste_eintraege
-            (name, menge, einheit, menge_text, erledigt, manuell, herkunft, sortierung)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (name, decimal_amount, unit, menge_text, bool(entry.get("erledigt")), bool(entry.get("manuell")),
-             json.dumps(origin, ensure_ascii=False) if origin else None, entry.get("sortierung")))
-        result.append({"id": cur.lastrowid, "name": name, "menge": decimal_amount, "einheit": unit,
-                       "menge_text": menge_text, "erledigt": bool(entry.get("erledigt")),
-                       "manuell": bool(entry.get("manuell")), "herkunft": origin, "sortierung": entry.get("sortierung")})
+        data = {"name": str(entry.get("name") or "").strip(),
+                "menge": _decimal_amount(amount) if isinstance(amount, str) else amount,
+                "einheit": (entry.get("einheit") or "").strip() or None,
+                "menge_text": entry.get("menge_text"), "herkunft": origin,
+                "manuell": bool(entry.get("manuell"))}
+        applied = apply_ops(cur, liste, [server_op("anlegen", str(uuid4()), data)])["ergebnisse"][0]
+        if applied["ergebnis"] == "abgelehnt":
+            raise ValueError(applied["grund"])
+        cur.execute("SELECT * FROM einkaufsliste_eintraege WHERE uuid=%s FOR UPDATE", (applied["eintrag_uuid"],))
+        row = cur.fetchone()
+        row["herkunft"] = parse_json_field(row["herkunft"])
+        row["erledigt"], row["manuell"] = bool(row["erledigt"]), bool(row["manuell"])
+        result.append(row)
     return result

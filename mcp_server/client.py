@@ -10,6 +10,10 @@ class DuplicateRecipeError(RuntimeError):
     """An existing recipe requires an explicit duplicate override."""
 
 
+class ShoppingListNotFound(ValueError):
+    """A requested shopping list name is unknown."""
+
+
 class RezeptifyClient:
     """Small authenticated wrapper around the Rezeptify REST API."""
 
@@ -271,3 +275,91 @@ class RezeptifyClient:
         response = await self._client.get("/api/tags")
         self._raise_for_status(response)
         return response.json()
+
+
+    @staticmethod
+    def _shopping_shape(item: dict) -> dict:
+        return {
+            "id": item["uuid"], "name": item["name"], "quantity": item.get("menge"),
+            "unit": item.get("einheit"), "quantity_text": item.get("menge_text"),
+            "note": item.get("notiz"), "done": bool(item.get("erledigt")),
+            "recipes": list(dict.fromkeys(origin["rezept_titel"] for origin in item.get("herkunft", [])
+                                          if origin.get("rezept_titel"))),
+        }
+
+    @staticmethod
+    def _shopping_fields(fields: dict) -> dict:
+        names = {"name": "name", "quantity": "menge", "unit": "einheit",
+                 "quantity_text": "menge_text", "note": "notiz", "done": "erledigt"}
+        return {names[key]: value for key, value in fields.items()}
+
+    async def list_shopping_lists(self) -> list[dict]:
+        response = await self._client.get("/api/einkauf/listen")
+        self._raise_for_status(response)
+        return response.json()["listen"]
+
+    async def _shopping_list_id(self, list_name: str | None) -> str | None:
+        if list_name is None:
+            return None
+        lists = await self.list_shopping_lists()
+        match = next((row for row in lists if row["name"].casefold() == list_name.strip().casefold()), None)
+        if match is None:
+            raise ShoppingListNotFound("Unbekannte Einkaufsliste. Vorhanden: " + ", ".join(row["name"] for row in lists))
+        return match["uuid"]
+
+    async def get_shopping_list(self, include_done: bool = False, list_name: str | None = None) -> list[dict]:
+        liste = await self._shopping_list_id(list_name)
+        response = await self._client.get("/api/einkauf/eintraege", params={"erledigte": include_done, **({"liste": liste} if liste else {})})
+        self._raise_for_status(response)
+        return [self._shopping_shape(item) for item in response.json()["eintraege"]]
+
+    async def add_shopping_items(self, items: list[dict] | None = None, text: str | None = None,
+                                 list_name: str | None = None) -> list[dict]:
+        response = await self._client.post("/api/einkauf/eintraege", json={
+            "liste": await self._shopping_list_id(list_name), **({"text": text} if text is not None else
+                              {"eintraege": [self._shopping_fields(item) for item in items]}),
+        })
+        self._raise_for_status(response)
+        return [self._shopping_shape(item) for item in response.json()["eintraege"]]
+
+    async def update_shopping_item(self, uuid: str, list_name: str | None = None, **felder) -> dict:
+        liste = await self._shopping_list_id(list_name)
+        response = await self._client.patch(f"/api/einkauf/eintraege/{uuid}", params={"liste": liste} if liste else {},
+                                            json=self._shopping_fields(felder))
+        self._raise_for_status(response)
+        return self._shopping_shape(response.json())
+
+    async def remove_shopping_item(self, uuid: str, list_name: str | None = None) -> dict:
+        liste = await self._shopping_list_id(list_name)
+        response = await self._client.delete(f"/api/einkauf/eintraege/{uuid}", params={"liste": liste} if liste else {})
+        self._raise_for_status(response)
+        return response.json()
+
+    async def clear_done_shopping_items(self, list_name: str | None = None) -> dict:
+        response = await self._client.post("/api/einkauf/erledigte-loeschen", json={"liste": await self._shopping_list_id(list_name)})
+        self._raise_for_status(response)
+        return response.json()
+
+    async def add_recipe_to_shopping_list(self, recipe_id: int, servings: int | None = None,
+                                          list_name: str | None = None) -> dict:
+        liste = await self._shopping_list_id(list_name)
+        if servings is None:
+            servings = (await self._get_recipe_raw(recipe_id))["portionen"]
+        response = await self._client.post(f"/api/rezepte/{recipe_id}/zu-einkaufsliste",
+                                           json={"portionen": servings, **({"liste": liste} if liste else {})})
+        self._raise_for_status(response)
+        return {"items": [self._shopping_shape(item) for item in response.json()["eintraege"]],
+                "skipped_pantry": response.json().get("vorrat", [])}
+
+    async def get_shopping_suggestions(self, list_name: str | None = None) -> dict:
+        liste = await self._shopping_list_id(list_name)
+        response = await self._client.get("/api/einkauf/vorschlaege", params={"liste": liste} if liste else {})
+        self._raise_for_status(response)
+        data = response.json()
+        return {"faellig": data["faellig"], "haeufig": data["haeufig"][:10], "wochenplan": data["wochenplan"]}
+
+    async def add_week_plan_to_shopping_list(self, von: str, bis: str, list_name: str | None = None) -> list[dict]:
+        liste = await self._shopping_list_id(list_name)
+        response = await self._client.post("/api/wochenplan/einkaufsliste", json={"von": von, "bis": bis, **({"liste": liste} if liste else {})})
+        self._raise_for_status(response)
+        return await self.get_shopping_list(False, list_name)

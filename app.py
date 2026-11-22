@@ -126,8 +126,14 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 @app.get("/service-worker")
 def service_worker():
     source = (BASE_DIR / "static/sw.js").read_text(encoding="utf-8")
+    token = get_asset_version()
+    manifest = json.loads((BASE_DIR / "static/manifest.json").read_text(encoding="utf-8"))
+    precache = ["/", "/static/manifest.json", f"/static/css/styles.css?v={token}"]
+    precache.extend("/" + path.relative_to(BASE_DIR).as_posix() + f"?v={token}"
+                    for path in javascript_files(BASE_DIR))
+    precache.extend(icon["src"] for icon in manifest.get("icons", []))
     return Response(
-        source.replace("__ASSET_VERSION__", get_asset_version()),
+        source.replace("__ASSET_VERSION__", token).replace("__PRECACHE__", json.dumps(precache)),
         media_type="application/javascript",
         headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
     )

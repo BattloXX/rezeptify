@@ -38,3 +38,5 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           for f in static/js/*.js static/js/views/*.js static/sw.js; do node --check "$f"; done
+      - name: Run frontend tests
+        run: node --test tests/js/

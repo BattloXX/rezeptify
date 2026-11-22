@@ -7,7 +7,7 @@ import pymysql.cursors
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_CHARSET
 
 # Informative Version für den Health-Endpoint; init_db() bleibt bewusst idempotent.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 @contextmanager
@@ -333,4 +333,96 @@ def init_db():
                 cur.execute("UPDATE rezepte SET suchtext=%s WHERE id=%s",
                             (build_suchtext(row["titel"], row["beschreibung"], row["kategorie"],
                                            row["tags"], row["zutaten"]), row["id"]))
+        conn.commit()
+
+        # Shopping sync schema; old integer IDs remain available to legacy routes.
+        from uuid import uuid4
+        from services.einkauf_sync import rang_initial, server_hlc, standard_liste
+        from services.shopping_service import normalize_name
+        with conn.cursor() as cur:
+            for table, definition in [
+                ("einkaufslisten", """uuid CHAR(36) PRIMARY KEY, name VARCHAR(120) NOT NULL,
+                    seq BIGINT NOT NULL DEFAULT 0, ist_standard TINYINT(1) NOT NULL DEFAULT 0,
+                    archiviert TINYINT(1) NOT NULL DEFAULT 0,
+                    erstellt_am TIMESTAMP DEFAULT CURRENT_TIMESTAMP"""),
+                ("einkauf_ops", """op_id CHAR(36) PRIMARY KEY, liste_uuid CHAR(36) NOT NULL,
+                    eintrag_uuid CHAR(36) NULL, typ VARCHAR(32) NOT NULL, hlc VARCHAR(64) NOT NULL,
+                    daten JSON NULL, ergebnis VARCHAR(16) NOT NULL, seq BIGINT NOT NULL DEFAULT 0,
+                    empfangen_am DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_ops_eintrag (eintrag_uuid, typ, hlc)"""),
+                ("einkauf_aliase", """alt_uuid CHAR(36) PRIMARY KEY, ziel_uuid CHAR(36) NOT NULL,
+                    liste_uuid CHAR(36) NOT NULL, seq BIGINT NOT NULL DEFAULT 0,
+                    INDEX idx_alias_liste_seq (liste_uuid, seq)"""),
+            ]:
+                cur.execute(f"CREATE TABLE IF NOT EXISTS {table} ({definition}) "
+                            "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci")
+            columns = {
+                "uuid": "CHAR(36) NULL", "liste_uuid": "CHAR(36) NULL",
+                "name_norm": "VARCHAR(255) NULL", "notiz": "VARCHAR(255) NULL",
+                "kategorie_id": "INT NULL", "rang": "VARCHAR(64) NULL",
+                "erledigt_am": "DATETIME NULL", "geloescht_am": "DATETIME NULL",
+                "seq": "BIGINT NOT NULL DEFAULT 0",
+            }
+            for field in ("inhalt", "menge", "status", "position", "geloescht"):
+                columns["hlc_" + field] = "VARCHAR(64) NOT NULL DEFAULT ''"
+            for column, definition in columns.items():
+                cur.execute("""SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='einkaufsliste_eintraege'
+                    AND COLUMN_NAME=%s""", (column,))
+                if not cur.fetchone()["n"]:
+                    cur.execute(f"ALTER TABLE einkaufsliste_eintraege ADD COLUMN {column} {definition}")
+            for index, definition in [
+                ("uq_einkauf_uuid", "UNIQUE INDEX uq_einkauf_uuid (uuid)"),
+                ("idx_einkauf_liste_seq", "INDEX idx_einkauf_liste_seq (liste_uuid, seq)"),
+            ]:
+                cur.execute("""SELECT COUNT(*) AS n FROM information_schema.STATISTICS
+                    WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='einkaufsliste_eintraege'
+                    AND INDEX_NAME=%s""", (index,))
+                if not cur.fetchone()["n"]:
+                    cur.execute(f"ALTER TABLE einkaufsliste_eintraege ADD {definition}")
+            liste_uuid = standard_liste(cur)
+            cur.execute("SELECT seq FROM einkaufslisten WHERE uuid=%s FOR UPDATE", (liste_uuid,))
+            seq = cur.fetchone()["seq"]
+            cur.execute("SELECT MAX(seq) AS seq FROM einkaufsliste_eintraege WHERE liste_uuid=%s", (liste_uuid,))
+            seq = max(seq, cur.fetchone()["seq"] or 0)
+            cur.execute("SELECT id, name FROM einkaufsliste_eintraege WHERE uuid IS NULL ORDER BY erledigt, sortierung IS NULL, sortierung, id")
+            rows = cur.fetchall()
+            hlc = server_hlc() if rows else None
+            for i, row in enumerate(rows):
+                seq += 1
+                cur.execute("""UPDATE einkaufsliste_eintraege SET uuid=%s, liste_uuid=%s,
+                    name_norm=%s, rang=%s, hlc_inhalt=%s, hlc_menge=%s, hlc_status=%s,
+                    hlc_position=%s, hlc_geloescht=%s, seq=%s WHERE id=%s""",
+                            (str(uuid4()), liste_uuid, normalize_name(row["name"]), rang_initial(i),
+                             hlc, hlc, hlc, hlc, hlc, seq, row["id"]))
+            cur.execute("UPDATE einkaufslisten SET seq=%s WHERE uuid=%s", (seq, liste_uuid))
+        conn.commit()
+
+        # Shopping categories and store-specific aisle ordering.
+        with conn.cursor() as cur:
+            for table, definition in [
+                ("einkauf_kategorien", """id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) UNIQUE,
+                    icon VARCHAR(40), standard_rang VARCHAR(64), aktiv TINYINT(1) DEFAULT 1"""),
+                ("einkauf_artikel", """name_norm VARCHAR(255) PRIMARY KEY, anzeigename VARCHAR(255),
+                    kategorie_id INT NULL, letzte_menge DECIMAL(10,3) NULL, letzte_einheit VARCHAR(32) NULL,
+                    anzahl_gekauft INT DEFAULT 0, zuletzt_gekauft DATETIME NULL, intervall_tage DECIMAL(6,2) NULL,
+                    vorrat TINYINT(1) DEFAULT 0, ausgeblendet TINYINT(1) DEFAULT 0,
+                    quelle ENUM('start','gelernt') DEFAULT 'gelernt', geaendert_seq BIGINT DEFAULT 0"""),
+                ("laeden", """id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) UNIQUE,
+                    aktiv TINYINT(1) DEFAULT 1, standard TINYINT(1) DEFAULT 0"""),
+                ("laden_kategorie_rang", """laden_id INT, kategorie_id INT, rang VARCHAR(64),
+                    PRIMARY KEY (laden_id,kategorie_id)"""),
+            ]:
+                cur.execute(f"CREATE TABLE IF NOT EXISTS {table} ({definition}) "
+                            "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci")
+            cur.execute("""SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='einkaufslisten' AND COLUMN_NAME='laden_id'""")
+            if not cur.fetchone()["n"]:
+                cur.execute("ALTER TABLE einkaufslisten ADD COLUMN laden_id INT NULL")
+            cur.execute("""SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='einkauf_artikel' AND COLUMN_NAME='ausgeblendet_bis'""")
+            if not cur.fetchone()["n"]:
+                cur.execute("ALTER TABLE einkauf_artikel ADD COLUMN ausgeblendet_bis DATETIME NULL")
+            from services.einkauf_woerterbuch import seed
+            seed(cur)
         conn.commit()
