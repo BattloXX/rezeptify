@@ -1,0 +1,596 @@
+{
+  "parse": [
+    {
+      "text": "2 kg Kartoffeln",
+      "expected": {
+        "name": "Kartoffeln",
+        "menge": 2,
+        "einheit": "kg",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "Kartoffeln 2kg",
+      "expected": {
+        "name": "Kartoffeln",
+        "menge": 2,
+        "einheit": "kg",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2kg Kartoffeln",
+      "expected": {
+        "name": "Kartoffeln",
+        "menge": 2,
+        "einheit": "kg",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "3x Milch",
+      "expected": {
+        "name": "Milch",
+        "menge": 3,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "Milch x3",
+      "expected": {
+        "name": "Milch",
+        "menge": 3,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "3 x Milch",
+      "expected": {
+        "name": "Milch",
+        "menge": 3,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "Milch 3x",
+      "expected": {
+        "name": "Milch",
+        "menge": 3,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "½ Bund Petersilie",
+      "expected": {
+        "name": "Petersilie",
+        "menge": 0.5,
+        "einheit": "Bund",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "1/2 Bund Petersilie",
+      "expected": {
+        "name": "Petersilie",
+        "menge": 0.5,
+        "einheit": "Bund",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "1 1/2 l Milch",
+      "expected": {
+        "name": "Milch",
+        "menge": 1.5,
+        "einheit": "l",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "1,5 l Milch",
+      "expected": {
+        "name": "Milch",
+        "menge": 1.5,
+        "einheit": "l",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "Milch 1,5l",
+      "expected": {
+        "name": "Milch",
+        "menge": 1.5,
+        "einheit": "l",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "500 g Faschiertes (Bio)",
+      "expected": {
+        "name": "Faschiertes",
+        "menge": 500,
+        "einheit": "g",
+        "menge_text": null,
+        "notiz": "Bio"
+      }
+    },
+    {
+      "text": "2 Dosen Tomaten",
+      "expected": {
+        "name": "Tomaten",
+        "menge": 2,
+        "einheit": "Dosen",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "Eier 10 Stk",
+      "expected": {
+        "name": "Eier",
+        "menge": 10,
+        "einheit": "Stk",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "10 Eier",
+      "expected": {
+        "name": "Eier",
+        "menge": 10,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "Salz",
+      "expected": {
+        "name": "Salz",
+        "menge": null,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2-3 Äpfel",
+      "expected": {
+        "name": "Äpfel",
+        "menge": null,
+        "einheit": null,
+        "menge_text": "2–3",
+        "notiz": null
+      }
+    },
+    {
+      "text": "Bananen etwas",
+      "expected": {
+        "name": "Bananen etwas",
+        "menge": null,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "Lauch",
+      "expected": {
+        "name": "Lauch",
+        "menge": null,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Lauch",
+      "expected": {
+        "name": "Lauch",
+        "menge": 2,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 garten Kräuter",
+      "expected": {
+        "name": "garten Kräuter",
+        "menge": 2,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "Milch (Bio, regional)",
+      "expected": {
+        "name": "Milch",
+        "menge": null,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": "Bio, regional"
+      }
+    },
+    {
+      "text": "Milch (Bio) (kalt)",
+      "expected": {
+        "name": "Milch",
+        "menge": null,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": "Bio; kalt"
+      }
+    },
+    {
+      "text": "  Brot  ",
+      "expected": {
+        "name": "Brot",
+        "menge": null,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "1/0 Brot",
+      "expected": {
+        "name": "Brot",
+        "menge": null,
+        "einheit": null,
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "¼ l Milch",
+      "expected": {
+        "name": "Milch",
+        "menge": 0.25,
+        "einheit": "l",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "¾ kg Mehl",
+      "expected": {
+        "name": "Mehl",
+        "menge": 0.75,
+        "einheit": "kg",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "1.5 l Milch",
+      "expected": {
+        "name": "Milch",
+        "menge": 1.5,
+        "einheit": "l",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "Äpfel 2–3",
+      "expected": {
+        "name": "Äpfel",
+        "menge": null,
+        "einheit": null,
+        "menge_text": "2–3",
+        "notiz": null
+      }
+    },
+    {
+      "text": "2-3 kg Äpfel",
+      "expected": {
+        "name": "Äpfel",
+        "menge": null,
+        "einheit": "kg",
+        "menge_text": "2–3",
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 MG Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "mg",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 ML Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "ml",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 cl Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "cl",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 dl Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "dl",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Stück Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Stk",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 EL Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "EL",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 TL Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "TL",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Pkg Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Pkg",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Packung Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Pkg",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Pck Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Pkg",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Dose Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Dose",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Becher Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Becher",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Flaschen Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Flaschen",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Gläser Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Gläser",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Kiste Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Kiste",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Netz Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Netz",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Beutel Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Beutel",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Prise Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Prise",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Zehen Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Zehen",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Scheiben Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Scheiben",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Rollen Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Rollen",
+        "menge_text": null,
+        "notiz": null
+      }
+    },
+    {
+      "text": "2 Stk. Zutat",
+      "expected": {
+        "name": "Zutat",
+        "menge": 2,
+        "einheit": "Stk",
+        "menge_text": null,
+        "notiz": null
+      }
+    }
+  ],
+  "split": [
+    {
+      "text": "Milch, Brot; Eier\nSalz",
+      "expected": [
+        "Milch",
+        "Brot",
+        "Eier",
+        "Salz"
+      ]
+    },
+    {
+      "text": "1,5 l Milch, 2 kg Mehl",
+      "expected": [
+        "1,5 l Milch",
+        "2 kg Mehl"
+      ]
+    },
+    {
+      "text": "500 g Fleisch (Bio, regional); Brot",
+      "expected": [
+        "500 g Fleisch (Bio, regional)",
+        "Brot"
+      ]
+    },
+    {
+      "text": "• Milch\n- Brot\n* Salz\n1. Eier\n[ ] Mehl\n☐ Reis",
+      "expected": [
+        "Milch",
+        "Brot",
+        "Salz",
+        "Eier",
+        "Mehl",
+        "Reis"
+      ]
+    },
+    {
+      "text": "\r\n ;, \n",
+      "expected": []
+    },
+    {
+      "text": "Milch (Bio; kalt\nregional), Brot",
+      "expected": [
+        "Milch (Bio; kalt\nregional)",
+        "Brot"
+      ]
+    },
+    {
+      "text": "2-3 Äpfel, 1/2 Bund Petersilie",
+      "expected": [
+        "2-3 Äpfel",
+        "1/2 Bund Petersilie"
+      ]
+    },
+    {
+      "text": "1.5 l Milch; 1. Brot\n2. 0.5 kg Mehl",
+      "expected": [
+        "1.5 l Milch",
+        "Brot",
+        "0.5 kg Mehl"
+      ]
+    }
+  ]
+}

@@ -201,6 +201,10 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
     plus: (id, delta) => enqueue('menge_plus', id, { menge: delta, einheit: state.get(id)?.einheit ?? null }),
     rename: (id, name) => enqueue('inhalt_setzen', id, { name }),
     setNote: (id, notiz) => enqueue('inhalt_setzen', id, { notiz }),
+    removeRecipe(rezeptId) {
+      for (const row of store.entries()) if ((row.herkunft || []).some(origin => origin.rezept_id === rezeptId))
+        enqueue('herkunft_entfernen', row.uuid, { rezept_id: rezeptId });
+    },
     remove: id => enqueue('loeschen', id, {}),
     move: (id, vorUuid, nachUuid) => enqueue('verschieben', id, { rang: rangZwischen(state.get(vorUuid)?.rang ?? null, state.get(nachUuid)?.rang ?? null) }),
     clearDone() {

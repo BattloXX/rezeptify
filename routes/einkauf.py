@@ -11,6 +11,7 @@ from services.einkauf_sync import (
     server_hlc, server_op, standard_liste,
 )
 from services.shopping_service import merge_or_add, zutaten_fuer_einkauf
+from services.mengen_parser import parse_eintrag, split_mehrfach
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -232,6 +233,11 @@ def get_uuid_eintraege(liste: str | None = None, erledigte: bool = False):
 @router.post("/api/einkauf/eintraege", status_code=201)
 def add_uuid_eintraege(body: dict):
     entries = body.get("eintraege")
+    if "text" in body:
+        text = body["text"]
+        if "eintraege" in body or not isinstance(text, str) or not text.strip() or len(text) > 2000:
+            raise HTTPException(400, "Text oder Einträge erforderlich, Text maximal 2000 Zeichen")
+        entries = [parse_eintrag(part) for part in split_mehrfach(text)]
     allowed = {"name", "menge", "einheit", "menge_text", "notiz"}
     if not isinstance(entries, list) or not 1 <= len(entries) <= 100:
         raise HTTPException(400, "1 bis 100 Einträge erforderlich")

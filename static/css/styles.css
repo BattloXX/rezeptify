@@ -952,6 +952,8 @@ textarea.fc { height: auto; padding: 10px 11px; resize: vertical; }
   .shopping-header { align-items: flex-start; }
   .shopping-add { flex-wrap: wrap; }
   .shopping-add input, .shopping-add .btn { flex: 1 1 100%; }
+  .shopping-add input { flex: 1 1 0; }
+  .shopping-add .shopping-mic { flex: 0 0 48px; padding: 0; justify-content: center; }
   .shopping-add .btn { justify-content: center; }
   .plan-days { gap: 8px; }
   .km-header { margin-bottom: 1rem; gap: 8px; }
@@ -959,3 +961,27 @@ textarea.fc { height: auto; padding: 10px 11px; resize: vertical; }
   .km-step { min-height: 38dvh; padding: 1.25rem; border-radius: var(--r-lg); }
   .km-controls { position: sticky; bottom: 0; padding-top: .75rem; background: var(--bg); }
 }
+
+/* Shopping input, quantity editor and pointer gestures. */
+.shopping-preview { margin:-.8rem 0 1.2rem; border-radius:12px; padding:6px 10px; background:var(--a-50); color:var(--accent); font-size:.85rem; }
+.shopping-text { display:block; text-align:left; border:0; background:transparent; color:inherit; padding:4px 0; cursor:pointer; overflow-wrap:anywhere; }
+.shopping-text small { display:block; color:var(--muted); margin-top:3px; }
+.shopping-stepper { display:flex; flex-shrink:0; }
+.shopping-stepper button { min-width:40px; min-height:40px; border:0; background:var(--a-50); color:var(--accent); font-size:1.2rem; }
+.shopping-stepper button:disabled { opacity:.35; }
+.shopping-origin button { border:0; background:transparent; color:inherit; font:inherit; padding:3px; cursor:pointer; }
+.shopping-origin.armed { background:#ffe0de; color:#a32626; }
+.shopping-units { display:flex; flex-wrap:wrap; gap:6px; }
+.shopping-units button { border:1px solid var(--border); border-radius:20px; min-height:40px; padding:4px 12px; background:transparent; color:inherit; }
+.shopping-units button[aria-pressed="true"] { background:var(--a-50); color:var(--accent); border-color:var(--accent); }
+.shopping-edit-body { max-height:65vh; overflow-y:auto; }
+.shopping-swipe { position:relative; overflow:hidden; }
+.shopping-row { position:relative; background:var(--bg); touch-action:pan-y; transition:transform .18s ease; }
+.shopping-row.swiping { transition:none; user-select:none; }
+.shopping-swipe-icon { position:absolute; top:50%; transform:translateY(-50%); color:white; display:none; }
+.shopping-swipe.swipe-right { background:#38864e; }
+.shopping-swipe.swipe-left { background:#b83b3b; }
+.swipe-right .shopping-swipe-icon { display:block; left:16px; }
+.swipe-left .shopping-swipe-icon { display:block; right:16px; }
+.shopping-recipe-armed { color:#a32626; background:#ffe0de; }
+#btn-remove-shopping-recipe[hidden] { display:none; }

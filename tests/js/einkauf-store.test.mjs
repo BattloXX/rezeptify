@@ -62,7 +62,7 @@ test('offline operations are optimistic, persisted and sent in order; concurrent
   assert.deepEqual(calls[0].ops.map(op => op.typ), ['anlegen', 'menge_plus', 'status_setzen']);
   assert.equal(calls[0].seit, 0);
   assert.equal(calls[0].ops[0].nr, undefined);
-  assert.equal(store.entries()[0].menge, 2000);
+  assert.equal(store.entries()[0].menge, 2);
   assert.equal(store.status().pending, 0);
   assert.equal(snapshot().ops.length, 0);
   assert.equal(snapshot().seq, 1);
@@ -165,7 +165,8 @@ test('restored pending state, duplicate amounts, conditional clear and undo use 
   const first = await setup(t);
   const id = first.store.add('Milch', { menge: 1, einheit: 'l', notiz: 'kalt' });
   assert.equal(first.store.add('Milch', { menge: 500, einheit: 'ml' }), id);
-  assert.equal(first.store.entries()[0].menge, 1500);
+  assert.equal(first.store.entries()[0].menge, 1.5);
+  assert.equal(first.store.entries()[0].einheit, 'l');
   first.store.toggle(id);
   await first.store.dispose();
   const second = await setup(t, undefined, first.snapshot());
@@ -182,4 +183,17 @@ test('restored pending state, duplicate amounts, conditional clear and undo use 
   assert.deepEqual(ops[3].daten.eintraege, [{ uuid: id, hlc_status: row.hlc_status }]);
   assert.equal(ops[4].typ, 'anlegen');
   assert.equal(ops[4].eintrag, newId);
+});
+
+test('removeRecipe queues one operation per matching entry, including done entries', async t => {
+  const { store, snapshot } = await setup(t);
+  const origin = [{ rezept_id: 7, menge: '2' }];
+  const first = store.add('Eier', { menge: 2, herkunft: origin, manuell: false });
+  store.add('Brot', { herkunft: origin, manuell: false });
+  store.add('Salz');
+  store.toggle(first);
+  store.removeRecipe(7);
+  assert.deepEqual(store.entries().map(e => e.name), ['Salz']);
+  await store.dispose();
+  assert.equal(snapshot().ops.filter(op => op.typ === 'herkunft_entfernen').length, 2);
 });

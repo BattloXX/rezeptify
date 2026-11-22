@@ -31,8 +31,9 @@ def test_merge_or_add_merges_only_exact_name_and_compatible_units(cur):
     merge_or_add(cur, [{"name": "Tomaten", "menge": Decimal("1"), "einheit": "kg", "herkunft": [{"rezept_id": 1}]}])
     result = merge_or_add(cur, [{"name": " tomaten ", "menge": Decimal("500"), "einheit": "g", "herkunft": [{"rezept_id": 2}]}])
     assert len(rows(cur)) == 1
-    assert rows(cur)[0]["menge"] == Decimal("1500")
-    assert rows(cur)[0]["einheit"] == "g"
+    # The first entry's unit stays: 1 kg + 500 g = 1.5 kg.
+    assert rows(cur)[0]["menge"] == Decimal("1.5")
+    assert rows(cur)[0]["einheit"] == "kg"
     assert result[0]["id"] == rows(cur)[0]["id"]
     assert result[0]["herkunft"] == [{"rezept_id": 1}, {"rezept_id": 2}]
     assert result[0]["uuid"] and result[0]["seq"] > 1

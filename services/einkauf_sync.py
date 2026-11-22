@@ -7,7 +7,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from db import parse_json_field
-from services.shopping_service import normalize_name, normalize_unit, _unit_multiplier
+from services.shopping_service import normalize_name, normalize_unit, _unit_multiplier, _decimal_amount
 
 
 _HLC = re.compile(r"([0-9]{13})-([0-9a-f]{4})-([A-Za-z0-9_-]{1,36})", re.ASCII)
@@ -182,6 +182,7 @@ def _validate(op):
         "inhalt_setzen": ({"name", "notiz", "kategorie_id"}, set()),
         "menge_setzen": ({"menge", "einheit", "menge_text"}, {"menge", "einheit", "menge_text"}),
         "menge_plus": ({"menge", "einheit"}, {"menge"}),
+        "herkunft_entfernen": ({"rezept_id"}, {"rezept_id"}),
         "status_setzen": ({"erledigt"}, {"erledigt"}),
         "verschieben": ({"rang"}, {"rang"}),
         "loeschen": (set(), set()),
@@ -221,6 +222,8 @@ def _validate(op):
             raise ValueError(key + "_format")
     if "herkunft" in data and not isinstance(data["herkunft"], list):
         raise ValueError("herkunft_format")
+    if "rezept_id" in data and (type(data["rezept_id"]) is not int or not 0 < data["rezept_id"] <= 2147483647):
+        raise ValueError("rezept_id_format")
     if "kategorie_id" in data and data["kategorie_id"] is not None:
         if type(data["kategorie_id"]) is not int or not 0 < data["kategorie_id"] <= 2147483647:
             raise ValueError("kategorie_id_format")
@@ -259,9 +262,10 @@ def _amount_plus(row, amount, unit):
         raise ValueError("einheit_inkompatibel")
     old = row["menge"] if row["menge"] is not None else (1 if family == "" else 0)
     total = max(Decimal(0), Decimal(old) * _multiplier(row["einheit"]) + amount * _multiplier(unit))
-    if normalize_unit(row["einheit"]) is None and normalize_unit(unit) is None:
-        return _number(total), row["einheit"] or unit or None
-    return _number(total), family or None
+    # Keep the entry's own unit (2 kg + 500 g = 2.5 kg), never switch silently to the base unit.
+    if row["einheit"] and row["einheit"].strip():
+        return _number(total / _multiplier(row["einheit"])), row["einheit"]
+    return _number(total / _multiplier(unit)), unit or None
 
 
 def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
@@ -301,6 +305,7 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
         try:
             _validate(op)
             typ, hlc, data = op["typ"], op["hlc"], op["daten"]
+            removed_delta = None
             if typ == "erledigte_loeschen":
                 # Resolve and check every list before making changes.
                 entries = [(_entry(cur, item["uuid"], liste_uuid), item["hlc_status"]) for item in data["eintraege"]]
@@ -330,7 +335,8 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
                         ident = target["uuid"]
                         amount = data.get("menge")
                         amount = Decimal(str(amount)) if amount is not None else Decimal(1 if family == "" else 0)
-                        values = {"herkunft": json.dumps(parse_json_field(target["herkunft"]) + data.get("herkunft", []))}
+                        values = {"herkunft": json.dumps(parse_json_field(target["herkunft"]) + data.get("herkunft", [])),
+                                  "manuell": bool(target["manuell"] or data.get("manuell", False))}
                         cur.execute("""SELECT op_id FROM einkauf_ops WHERE eintrag_uuid=%s
                             AND typ='menge_setzen' AND ergebnis='ok' AND BINARY hlc > BINARY %s LIMIT 1 FOR UPDATE""",
                                     (ident, hlc))
@@ -358,6 +364,34 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
                     result["ergebnis"] = "ok"
                 elif not row:
                     raise ValueError("eintrag_nicht_gefunden")
+                elif typ == "herkunft_entfernen":
+                    origins = parse_json_field(row["herkunft"])
+                    removed = [origin for origin in origins if origin.get("rezept_id") == data["rezept_id"]]
+                    remaining = [origin for origin in origins if origin.get("rezept_id") != data["rezept_id"]]
+                    if not removed:
+                        result["ergebnis"] = "ignoriert"
+                    else:
+                        values = {"herkunft": json.dumps(remaining)}
+                        if hlc >= row["hlc_menge"]:
+                            from services.mengen_parser import _numeric
+                            delta = Decimal(0)
+                            for origin in removed:
+                                try:
+                                    amount = _decimal_amount(origin.get("menge"))
+                                    if amount is None:
+                                        amount = Decimal(str(_numeric(str(origin.get("menge", "")))))
+                                except (ValueError, ZeroDivisionError):
+                                    continue
+                                if amount.is_finite() and _family(origin.get("einheit")) == _family(row["einheit"]):
+                                    delta += amount * _multiplier(origin.get("einheit")) / _multiplier(row["einheit"])
+                            removed_delta = -delta
+                            if row["menge"] is not None:
+                                values["menge"] = _number(max(Decimal(0), Decimal(row["menge"]) - delta))
+                            if not remaining and not row["manuell"] and (row["menge"] is None or values.get("menge", row["menge"]) <= 0):
+                                cur.execute("SELECT UTC_TIMESTAMP() AS zeit")
+                                values.update(geloescht_am=cur.fetchone()["zeit"], hlc_geloescht=hlc)
+                        update(ident, values)
+                        result["ergebnis"] = "ok"
                 elif typ == "menge_plus":
                     if hlc < row["hlc_menge"]:
                         result["ergebnis"] = "ignoriert"
@@ -388,7 +422,7 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
                                 total = data["menge"] if data["menge"] is not None else (1 if family == "" else 0)
                                 total = Decimal(str(total)) * _multiplier(data["einheit"])
                                 cur.execute("""SELECT daten FROM einkauf_ops WHERE eintrag_uuid=%s
-                                    AND typ IN ('menge_plus','anlegen') AND ergebnis='ok' AND BINARY hlc > BINARY %s
+                                    AND typ IN ('menge_plus','anlegen','herkunft_entfernen') AND ergebnis='ok' AND BINARY hlc > BINARY %s
                                     ORDER BY BINARY hlc, op_id FOR UPDATE""", (ident, hlc))
                                 applied = False
                                 for delta in cur.fetchall():
@@ -398,9 +432,8 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
                                         applied = True
                                 # Without newer deltas keep the user's spelling (1,5 kg stays kg).
                                 if applied:
-                                    values["menge"] = _number(max(Decimal(0), total))
-                                    known = normalize_unit(data["einheit"])
-                                    values["einheit"] = known if known else (data["einheit"] or None)
+                                    values["menge"] = _number(max(Decimal(0), total) / _multiplier(data["einheit"]))
+                                    values["einheit"] = data["einheit"] or None
                         values[field] = hlc
                         update(ident, values)
                         result["ergebnis"] = "ok"
@@ -416,6 +449,9 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
             saved["_sync_delta"] = saved["menge"]
         elif result["ergebnis"] == "ok" and op.get("typ") == "anlegen" and result["eintrag_uuid"] != op.get("eintrag"):
             saved["_sync_delta"] = saved.get("menge") if saved.get("menge") is not None else (1 if not saved.get("einheit") else 0)
+        if result["ergebnis"] == "ok" and op.get("typ") == "herkunft_entfernen" and removed_delta is not None:
+            saved["_sync_delta"] = removed_delta
+            saved["einheit"] = row["einheit"]
         saved["_sync_result"] = result
         try:
             encoded = json.dumps(saved, allow_nan=False, default=_json_default)

@@ -244,7 +244,7 @@ def test_units_delta_replay_and_negative_clamp(liste):
     ident = create(liste, menge=1, einheit="kg")
     send(liste, op("menge_plus", ident, {"menge": 500, "einheit": "g"}, t=30))
     send(liste, op("menge_setzen", ident, {"menge": 2, "einheit": "kg", "menge_text": None}, t=20))
-    assert state(liste)["eintraege"][0]["menge"] == 2500
+    assert state(liste)["eintraege"][0]["menge"] == 2.5
     result = send(liste, op("menge_plus", ident, {"menge": 1, "einheit": "ml"}, t=40))
     assert result["ergebnisse"][0]["grund"] == "einheit_inkompatibel"
     send(liste, op("menge_plus", ident, {"menge": -10, "einheit": "kg"}, t=50))
@@ -340,7 +340,7 @@ def test_merge_delta_survives_delayed_set(liste):
     send(liste, op("anlegen", alias, {"name": "Milch", "menge": 500, "einheit": "g", "herkunft": [{"rezept_id": 2}]}, t=30))
     send(liste, op("menge_setzen", ident, {"menge": 2, "einheit": "kg", "menge_text": None}, t=20))
     row = state(liste)["eintraege"][0]
-    assert row["menge"] == 2500 and row["einheit"] == "g"
+    assert row["menge"] == 2.5 and row["einheit"] == "kg"
     assert row["herkunft"] == [{"rezept_id": 1}, {"rezept_id": 2}]
 
 
@@ -459,3 +459,78 @@ def test_anhaengen_ueber_400_eintraege(client):
             assert all(r["ergebnis"] == "ok" for r in res["ergebnisse"])
             cur.execute("SELECT MAX(LENGTH(rang)) AS n FROM einkaufsliste_eintraege")
             assert cur.fetchone()["n"] <= 9
+
+
+def test_k_recipe_removal_converts_units_and_is_idempotent(liste):
+    origins = [{"rezept_id": 1, "menge": "0,5", "einheit": "kg"},
+               {"rezept_id": 1, "menge": "100", "einheit": "g"},
+               {"rezept_id": 2, "menge": "400", "einheit": "g"}]
+    ident = create(liste, menge=1000, einheit="g", herkunft=origins)
+    removal = op("herkunft_entfernen", ident, {"rezept_id": 1}, t=30)
+    send(liste, removal, removal, op("herkunft_entfernen", ident, {"rezept_id": 1}, t=40))
+    row = state(liste)["eintraege"][0]
+    assert row["menge"] == 400 and row["herkunft"] == origins[2:] and not row["geloescht"]
+    send(liste, op("menge_setzen", ident, {"menge": 2, "einheit": "kg", "menge_text": None}, t=20))
+    assert state(liste)["eintraege"][0]["menge"] == 1.4
+
+
+@pytest.mark.parametrize('manual,amount,deleted', [(False, 2, True), (True, 2, False), (True, 5, False), (False, None, True)])
+def test_k_recipe_removal_tombstone(liste, manual, amount, deleted):
+    ident = create(liste, menge=amount, manuell=manual,
+                   herkunft=[{"rezept_id": 1, "menge": "2" if amount is not None else "etwas", "einheit": None}])
+    send(liste, op("herkunft_entfernen", ident, {"rezept_id": 1}))
+    row = state(liste)["eintraege"][0]
+    assert row["geloescht"] is deleted and row["herkunft"] == []
+    assert row["menge"] == (max(0, amount - 2) if amount is not None else None)
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_k_recipe_removal_respects_newer_amount(liste, reverse):
+    ident = create(liste, menge=2, herkunft=[{"rezept_id": 1, "menge": "2"}], manuell=True)
+    ops = [op("herkunft_entfernen", ident, {"rezept_id": 1}, t=10),
+           op("menge_setzen", ident, {"menge": 8, "einheit": None, "menge_text": None}, t=20)]
+    send(liste, *ops[::(-1 if reverse else 1)])
+    row = state(liste)["eintraege"][0]
+    assert row["menge"] == 8 and row["herkunft"] == [] and not row["geloescht"]
+
+
+@pytest.mark.parametrize('value', [True, None, -1, 0, 1.5, "1", 2147483648])
+def test_recipe_removal_validation(liste, value):
+    ident = create(liste)
+    result = send(liste, op("herkunft_entfernen", ident, {"rezept_id": value}))
+    assert result["ergebnisse"][0]["grund"] == "rezept_id_format"
+
+
+@pytest.mark.parametrize('quantity,amount', [('1½', 1.5), ('⅓', .33), ('1/2', .5), ('nach Geschmack', None)])
+def test_k_recipe_removal_formatted_recipe_quantities(liste, quantity, amount):
+    ident = create(liste, menge=amount, einheit='kg', herkunft=[{"rezept_id": 1, "menge": quantity, "einheit": "kg"}])
+    send(liste, op('herkunft_entfernen', ident, {"rezept_id": 1}))
+    row = state(liste)["eintraege"][0]
+    assert row["geloescht"] and row["herkunft"] == []
+    assert row["menge"] == (0 if amount is not None else None)
+
+
+def test_menge_plus_behaelt_einheit_des_eintrags(client):
+    from db import get_db
+    from services.einkauf_sync import apply_ops, standard_liste
+    from uuid import uuid4
+    base = 1700000000000
+    a = str(uuid4())
+
+    def op(typ, daten, t):
+        return {"op_id": str(uuid4()), "typ": typ, "eintrag": a, "hlc": f"{base + t:013d}-0000-geraetA", "daten": daten}
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            liste = standard_liste(cur)
+            apply_ops(cur, liste, [op("anlegen", {"name": "Kartoffeln", "menge": 2, "einheit": "kg"}, 0),
+                                   op("menge_plus", {"menge": 0.5, "einheit": "kg"}, 1),
+                                   op("menge_plus", {"menge": 250, "einheit": "g"}, 2)])
+            cur.execute("SELECT menge, einheit FROM einkaufsliste_eintraege WHERE uuid=%s", (a,))
+            row = cur.fetchone()
+            assert float(row["menge"]) == 2.75 and row["einheit"] == "kg"
+            # Older set + newer delta: recomputed in the unit of the set (1 kg + 0.5 kg + 250 g).
+            apply_ops(cur, liste, [op("menge_setzen", {"menge": 1, "einheit": "kg", "menge_text": None}, 0)])
+            cur.execute("SELECT menge, einheit FROM einkaufsliste_eintraege WHERE uuid=%s", (a,))
+            row = cur.fetchone()
+    assert row["einheit"] == "kg"

@@ -122,6 +122,7 @@ const FIELDS = {
   anlegen: [['name', 'menge', 'einheit', 'menge_text', 'notiz', 'rang', 'herkunft', 'manuell'], ['name']],
   inhalt_setzen: [['name', 'notiz', 'kategorie_id'], []],
   menge_setzen: [['menge', 'einheit', 'menge_text'], ['menge', 'einheit', 'menge_text']],
+  herkunft_entfernen: [['rezept_id'], ['rezept_id']],
   menge_plus: [['menge', 'einheit'], ['menge']], status_setzen: [['erledigt'], ['erledigt']],
   verschieben: [['rang'], ['rang']], loeschen: [[], []], erledigte_loeschen: [['eintraege'], ['eintraege']],
 };
@@ -149,6 +150,7 @@ function validate(op) {
   if (Object.hasOwn(data, 'rang')) rank(data.rang);
   for (const key of ['erledigt', 'manuell']) if (Object.hasOwn(data, key) && typeof data[key] !== 'boolean') fail(key + '_format');
   if (Object.hasOwn(data, 'herkunft') && !Array.isArray(data.herkunft)) fail('herkunft_format');
+  if (Object.hasOwn(data, 'rezept_id') && (!Number.isInteger(data.rezept_id) || data.rezept_id <= 0 || data.rezept_id > 2147483647)) fail('rezept_id_format');
   if (Object.hasOwn(data, 'kategorie_id') && data.kategorie_id !== null &&
       (!Number.isInteger(data.kategorie_id) || data.kategorie_id <= 0 || data.kategorie_id > 2147483647)) fail('kategorie_id_format');
   // JSON persistence must not silently drop values or turn non-finite numbers into null.
@@ -169,11 +171,14 @@ function amountPlus(row, amount, unit) {
   if (row.menge_text || family !== unitFamily(unit)) fail('einheit_inkompatibel');
   const old = row.menge ?? (family === '' ? 1 : 0);
   const total = Math.max(0, old * unitMultiplier(row.einheit) + amount * unitMultiplier(unit));
-  number(total);
-  return { menge: total, einheit: !knownUnit(row.einheit) && !knownUnit(unit) ? row.einheit || unit || null : family || null };
+  // Keep the entry's own unit (2 kg + 500 g = 2.5 kg), never switch silently to the base unit.
+  const einheit = row.einheit && row.einheit.trim() ? row.einheit : (unit || null);
+  const menge = Math.round(total / unitMultiplier(einheit) * 1000) / 1000;
+  number(menge);
+  return { menge, einheit };
 }
 function metadata(state) {
-  if (!local.has(state)) local.set(state, { aliases: new Map(), applied: new Map() });
+  if (!local.has(state)) local.set(state, { aliases: new Map(), applied: new Map(), deltas: [] });
   return local.get(state);
 }
 function resolve(ident, aliases) {
@@ -211,7 +216,7 @@ export function applyOpLocal(state, op) {
         // On live entries hlc_geloescht still records creation; only a set advances hlc_menge.
         const newerSet = target.hlc_menge > target.hlc_geloescht && target.hlc_menge > hlc;
         const values = newerSet ? {} : amountPlus(target, amount, data.einheit);
-        state.set(target.uuid, { ...target, ...values, herkunft: [...(target.herkunft || []), ...structuredClone(data.herkunft || [])] });
+        state.set(target.uuid, { ...target, ...values, manuell: target.manuell || !!data.manuell, herkunft: [...(target.herkunft || []), ...structuredClone(data.herkunft || [])] });
         meta.aliases.set(ident, target.uuid);
         ident = target.uuid;
       } else {
@@ -226,11 +231,43 @@ export function applyOpLocal(state, op) {
     } else if (!row) fail('eintrag_nicht_gefunden');
     else if (typ === 'menge_plus') {
       if (hlc >= row.hlc_menge) state.set(ident, { ...row, ...amountPlus(row, data.menge, data.einheit) });
+    } else if (typ === 'herkunft_entfernen') {
+      const removed = (row.herkunft || []).filter(origin => origin.rezept_id === data.rezept_id);
+      const herkunft = (row.herkunft || []).filter(origin => origin.rezept_id !== data.rezept_id);
+      const values = { herkunft };
+      if (removed.length && hlc >= row.hlc_menge) {
+        let delta = 0;
+        for (const origin of removed) {
+          const raw = String(origin.menge ?? '').trim().replace(',', '.');
+          let amount = /^[0-9]+(?:\.[0-9]+)?$/.test(raw) ? Number(raw) : NaN;
+          const fraction = raw.match(/^(?:(\d+)\s+)?(\d+)\/(\d+)$/);
+          if (fraction) amount = Number(fraction[1] || 0) + Number(fraction[2]) / Number(fraction[3]);
+          const fractions = { '½':0.5, '¼':0.25, '¾':0.75, '⅓':0.33, '⅔':0.67 };
+          const mixed = raw.match(/^(\d*)([½¼¾⅓⅔])$/u);
+          if (mixed) amount = Number(mixed[1] || 0) + fractions[mixed[2]];
+          if (Number.isFinite(amount) && unitFamily(origin.einheit) === unitFamily(row.einheit))
+            delta += amount * unitMultiplier(origin.einheit) / unitMultiplier(row.einheit);
+        }
+        if (delta) meta.deltas.push({ id: ident, hlc, amount: -delta, unit: row.einheit });
+        if (row.menge != null) values.menge = Math.max(0, row.menge - delta);
+        if (!herkunft.length && !row.manuell && (row.menge == null || values.menge <= 0)) {
+          values.geloescht = true; values.hlc_geloescht = hlc;
+        }
+      }
+      state.set(ident, { ...row, ...values });
     } else if (typ === 'loeschen') state.set(ident, { ...row, geloescht: true, hlc_geloescht: hlc });
     else {
       const field = { inhalt_setzen: 'hlc_inhalt', menge_setzen: 'hlc_menge', status_setzen: 'hlc_status', verschieben: 'hlc_position' }[typ];
       if (hlc > row[field]) {
         const values = structuredClone(data);
+        if (typ === 'menge_setzen' && !values.menge_text) {
+          const deltas = meta.deltas.filter(delta => delta.id === ident && delta.hlc > hlc && unitFamily(delta.unit) === unitFamily(values.einheit));
+          if (deltas.length) {
+            const total = (values.menge ?? (unitFamily(values.einheit) === '' ? 1 : 0)) * unitMultiplier(values.einheit) +
+              deltas.reduce((sum, delta) => sum + delta.amount * unitMultiplier(delta.unit), 0);
+            values.menge = Math.max(0, total); values.einheit = knownUnit(values.einheit)?.[0] ?? values.einheit;
+          }
+        }
         if (typ === 'inhalt_setzen' && Object.hasOwn(values, 'name')) values.name = values.name.trim();
         state.set(ident, { ...row, ...values, [field]: hlc });
       }
@@ -267,6 +304,10 @@ export function sortedEntries(state) {
 }
 
 export function formatAmount(entry) {
-  const amount = entry.menge_text || (entry.menge == null ? null : String(entry.menge).replace('.', ','));
-  return [amount, entry.einheit, entry.name].filter(v => v !== null && v !== undefined && v !== '').join(' ');
+  let value = entry.menge, unit = entry.einheit;
+  if (!entry.menge_text && value >= 1000 && ['g', 'ml'].includes(unit?.toLowerCase())) {
+    value /= 1000; unit = unit.toLowerCase() === 'g' ? 'kg' : 'l';
+  }
+  const amount = entry.menge_text || (value == null ? null : String(Number(value.toFixed(6))).replace('.', ','));
+  return [amount, unit, entry.name].filter(v => v !== null && v !== undefined && v !== '').join(' ');
 }

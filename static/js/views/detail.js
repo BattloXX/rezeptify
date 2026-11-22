@@ -1,4 +1,4 @@
-import { onAnyShoppingChange } from '../einkauf-store.js';
+import shoppingStore, { onAnyShoppingChange } from '../einkauf-store.js';
 import { api, apiFetch } from '../api.js';
 import { askImageUrl, toast, x, safeUrl, safeImageUrl, EM, optimisticToggle, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
 import { S } from '../app.js';
@@ -7,6 +7,13 @@ import { openEditForm } from './form.js';
 import { startKochmodus } from './kochmodus.js';
 
 let portionState = { base: 4, current: 4 };
+
+function updateShoppingRecipe() {
+  const button = document.getElementById('btn-remove-shopping-recipe');
+  if (button) button.hidden = !shoppingStore.isInitialized() || !shoppingStore.entries().some(entry =>
+    (entry.herkunft || []).some(origin => origin.rezept_id === Number(button.dataset.recipe)));
+}
+shoppingStore.addEventListener('change', updateShoppingRecipe);
 
 export async function openDetail(id) {
   try {
@@ -73,6 +80,7 @@ function buildDetailBody(r) {
 
   const body = document.getElementById('d-body');
   body.onclick = event => {
+    if (event.target.closest('#btn-remove-shopping-recipe')) { confirmShoppingRemoval(); return; }
     const tag = event.target.closest('[data-tag]');
     if (tag && body.contains(tag)) { window.filterByTag(tag.dataset.tag); return; }
     const button = event.target.closest('[data-copy]');
@@ -110,6 +118,7 @@ function buildDetailBody(r) {
       <button class="act-btn" onclick="addToShoppingList()" id="btn-add-shopping">
         <span class="material-symbols-outlined">add_shopping_cart</span>Zur Einkaufsliste hinzufügen
       </button>
+      <button class="act-btn" id="btn-remove-shopping-recipe" data-recipe="${Number(r.id)}" hidden>Bereits auf der Liste – entfernen</button>
       <button class="act-btn" onclick="openPlanOverlay()">
         <span class="material-symbols-outlined">calendar_add_on</span>Für diese Woche planen
       </button>
@@ -127,6 +136,28 @@ function buildDetailBody(r) {
     ${r.zubereitung ? `<div class="d-section-title">Zubereitung</div><div class="steps"><p class="step-text">${x(r.zubereitung)}</p></div>` : ''}
     ${tags ? `<div class="d-section-title">Tags</div><div class="tags-row">${tags}</div>` : ''}
   `;
+  updateShoppingRecipe();
+}
+
+function confirmShoppingRemoval() {
+  const removeShopping = document.getElementById('btn-remove-shopping-recipe');
+  if (!removeShopping) return;
+  if (removeShopping.dataset.armed === 'true') {
+    try { shoppingStore.removeRecipe(Number(removeShopping.dataset.recipe)); }
+    catch (e) { toast(e.message, 'err'); }
+    removeShopping.dataset.armed = '';
+    removeShopping.classList.remove('shopping-recipe-armed');
+    removeShopping.textContent = 'Bereits auf der Liste – entfernen';
+  } else {
+    removeShopping.dataset.armed = 'true';
+    removeShopping.classList.add('shopping-recipe-armed');
+    removeShopping.textContent = 'Entfernen?';
+    setTimeout(() => {
+      removeShopping.dataset.armed = '';
+      removeShopping.classList.remove('shopping-recipe-armed');
+      removeShopping.textContent = 'Bereits auf der Liste – entfernen';
+    }, 3000);
+  }
 }
 
 function renderIngredients(zutaten, current, base) {
@@ -321,7 +352,7 @@ async function addToShoppingList() {
     await api('/api/rezepte/' + S.current.id + '/zu-einkaufsliste', {
       method: 'POST', body: JSON.stringify({ portionen: portionState.current })
     });
-    onAnyShoppingChange();
+    await onAnyShoppingChange();
     const old = btn.innerHTML;
     btn.innerHTML = '<span class="material-symbols-outlined">check</span> Hinzugefügt!';
     setTimeout(() => { if (btn) btn.innerHTML = old; }, 2500);

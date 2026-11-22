@@ -52,7 +52,7 @@ def test_merge_and_alias(client):
                {"name": "Milch", "menge": 1, "einheit": "Dose"})
     assert rows[0]["uuid"] == rows[1]["uuid"] != rows[2]["uuid"]
     assert rows[1]["zusammengefuehrt"] is True
-    assert (rows[1]["menge"], rows[1]["einheit"]) == (1500, 'ml')
+    assert (rows[1]["menge"], rows[1]["einheit"]) == (1.5, 'l')
     alias = sync(client)["aliase"][0]["alt"]
     assert client.patch(f'{BASE}/{alias}', json={"notiz": "kalt"}).json()["uuid"] == rows[0]["uuid"]
     assert client.delete(f'{BASE}/{alias}').json() == {"ok": True}
@@ -136,3 +136,23 @@ def test_uuid_routes_require_auth(client, monkeypatch):
     assert client.patch(f'{BASE}/{uuid4()}', json={"erledigt": True}).status_code == 401
     assert client.delete(f'{BASE}/{uuid4()}').status_code == 401
     assert client.post('/api/einkauf/erledigte-loeschen', json={}).status_code == 401
+
+
+def test_free_text_add(client):
+    response = client.post(BASE, json={"text": "• 1,5 l Milch\n2 kg Kartoffeln (Bio, regional); Brot, Eier 10 Stk"})
+    assert response.status_code == 201, response.text
+    rows = response.json()["eintraege"]
+    assert [row["name"] for row in rows] == ["Milch", "Kartoffeln", "Brot", "Eier"]
+    assert (rows[0]["menge"], rows[0]["einheit"]) == (1.5, "l")
+    assert rows[1]["notiz"] == "Bio, regional"
+    assert rows[3]["menge"] == 10
+    merged = client.post(BASE, json={"text": "500ml Milch"}).json()["eintraege"][0]
+    assert merged["uuid"] == rows[0]["uuid"] and merged["menge"] == 2
+
+
+@pytest.mark.parametrize('body', [{"text": ""}, {"text": " ; "}, {"text": None}, {"text": 12},
+    {"text": "x" * 2001}, {"text": "Brot", "eintraege": []}, {"text": "(Bio)"},
+    {"text": ";".join(f"Artikel {i}" for i in range(101))}])
+def test_free_text_validation(client, body):
+    assert client.post(BASE, json=body).status_code == 400
+    assert client.get(BASE).json()["eintraege"] == []

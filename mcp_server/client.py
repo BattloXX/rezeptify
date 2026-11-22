@@ -294,9 +294,10 @@ class RezeptifyClient:
         self._raise_for_status(response)
         return [self._shopping_shape(item) for item in response.json()["eintraege"]]
 
-    async def add_shopping_items(self, items: list[dict]) -> list[dict]:
+    async def add_shopping_items(self, items: list[dict] | None = None, text: str | None = None) -> list[dict]:
         response = await self._client.post("/api/einkauf/eintraege", json={
-            "liste": None, "eintraege": [self._shopping_fields(item) for item in items],
+            "liste": None, **({"text": text} if text is not None else
+                              {"eintraege": [self._shopping_fields(item) for item in items]}),
         })
         self._raise_for_status(response)
         return [self._shopping_shape(item) for item in response.json()["eintraege"]]

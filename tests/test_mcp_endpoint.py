@@ -2,6 +2,8 @@
 import json
 import logging
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 
@@ -318,5 +320,24 @@ def test_shopping_tools_end_to_end(client, monkeypatch):
 def test_shopping_tool_rejects_oversized_batch(client):
     result = _call_tool(client, {"Authorization": "Bearer test-mcp-token"}, None, 1,
                         "add_to_shopping_list", {"items": [{"name": "Brot"}] * 101})
+    assert result.get("isError"), result
+    assert client.get('/api/einkauf/eintraege').json()["eintraege"] == []
+
+
+def test_shopping_free_text(client):
+    headers = {"Authorization": "Bearer test-mcp-token"}
+    result = _call_tool(client, headers, None, 1, "add_to_shopping_list",
+                        {"text": "1,5 l Milch, 2 Dosen Tomaten (Bio)\nBrot"})
+    assert not result.get("isError"), result
+    rows = client.get('/api/einkauf/eintraege').json()["eintraege"]
+    assert [row["name"] for row in rows] == ["Milch", "Tomaten", "Brot"]
+    assert rows[0]["menge"] == 1.5 and rows[1]["notiz"] == 'Bio'
+
+
+@pytest.mark.parametrize('arguments', [{}, {"text": " "}, {"text": "x" * 2001},
+    {"text": "Brot", "items": [{"name": "Milch"}]}])
+def test_shopping_free_text_validation(client, arguments):
+    result = _call_tool(client, {"Authorization": "Bearer test-mcp-token"}, None, 1,
+                        "add_to_shopping_list", arguments)
     assert result.get("isError"), result
     assert client.get('/api/einkauf/eintraege').json()["eintraege"] == []

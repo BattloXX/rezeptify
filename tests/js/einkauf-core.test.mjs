@@ -113,9 +113,9 @@ test('K6 deltas, equality boundary, units, clamp and local set without delta rep
   assert.equal(s.get(id).menge, 3);
   apply(s, op('menge_setzen', id, { menge: 2, einheit: 'kg', menge_text: null }, 20));
   apply(s, op('menge_plus', id, { menge: 500, einheit: 'g' }, 20));
-  assert.equal(s.get(id).menge, 2500); assert.equal(s.get(id).einheit, 'g');
+  assert.equal(s.get(id).menge, 2.5); assert.equal(s.get(id).einheit, 'kg');
   apply(s, op('menge_plus', id, { menge: 99, einheit: 'g' }, 19));
-  assert.equal(s.get(id).menge, 2500);
+  assert.equal(s.get(id).menge, 2.5);
   apply(s, op('menge_plus', id, { menge: -10, einheit: 'kg' }, 30));
   assert.equal(s.get(id).menge, 0);
   apply(s, op('menge_setzen', id, { menge: 1.5, einheit: 'kg', menge_text: null }, 25));
@@ -211,4 +211,42 @@ test('operation factory and German amount display', () => {
   for (const [entry, expected] of [[{ menge: 1.5, einheit: 'kg' }, '1,5 kg'], [{ menge: 2, name: 'Milch' }, '2 Milch'],
     [{ menge_text: 'nach Geschmack', name: 'Salz' }, 'nach Geschmack Salz'], [{ menge: 0, name: 'Salz' }, '0 Salz']])
     assert.equal(formatAmount(entry), expected);
+});
+
+test('recipe removal subtracts all matching origins, converts units and replays its negative delta', () => {
+  const state = new Map();
+  const origins = [{ rezept_id: 1, menge: '0,5', einheit: 'kg' }, { rezept_id: 1, menge: '100', einheit: 'g' },
+    { rezept_id: 2, menge: '400', einheit: 'g' }];
+  const id = create(state, 'Mehl', { menge: 1000, einheit: 'g', herkunft: origins });
+  const removal = op('herkunft_entfernen', id, { rezept_id: 1 }, 30);
+  assert.ok(!applyOpLocal(state, removal).abgelehnt);
+  applyOpLocal(state, removal);
+  applyOpLocal(state, op('herkunft_entfernen', id, { rezept_id: 1 }, 40));
+  assert.equal(state.get(id).menge, 400);
+  assert.deepEqual(state.get(id).herkunft, origins.slice(2));
+  applyOpLocal(state, op('menge_setzen', id, { menge: 2, einheit: 'kg', menge_text: null }, 20));
+  assert.equal(state.get(id).menge, 1400);
+});
+
+test('recipe removal respects manual entries, tombstones, missing quantities and newer sets', () => {
+  for (const manual of [false, true]) for (const menge of [null, 2]) {
+    const s = new Map(), id = create(s, 'Mehl', { menge, manuell: manual, herkunft: [{ rezept_id: 1, menge: menge == null ? 'etwas' : '2' }] });
+    applyOpLocal(s, op('herkunft_entfernen', id, { rezept_id: 1 }, 20));
+    assert.equal(s.get(id).geloescht, !manual);
+    assert.equal(s.get(id).menge, menge == null ? null : 0);
+  }
+  const s = new Map(), id = create(s, 'Mehl', { menge: 2, herkunft: [{ rezept_id: 1, menge: '2' }] });
+  applyOpLocal(s, op('menge_setzen', id, { menge: 8, einheit: null, menge_text: null }, 30));
+  applyOpLocal(s, op('herkunft_entfernen', id, { rezept_id: 1 }, 20));
+  assert.equal(s.get(id).menge, 8); assert.equal(s.get(id).geloescht, false); assert.deepEqual(s.get(id).herkunft, []);
+  assert.equal(formatAmount({ menge: 1500, einheit: 'g', name: 'Mehl' }), '1,5 kg Mehl');
+  assert.equal(formatAmount({ menge: 1250, einheit: 'ml', name: 'Milch' }), '1,25 l Milch');
+});
+
+test('recipe removal understands formatted mixed fractions and unquantified origins', () => {
+  for (const [quantity, menge] of [['1½', 1.5], ['⅓', .33], ['1/2', .5], ['nach Geschmack', null]]) {
+    const s = new Map(), id = create(s, 'Mehl', { menge, einheit:'kg', herkunft:[{ rezept_id:1, menge:quantity, einheit:'kg' }] });
+    apply(s, op('herkunft_entfernen', id, { rezept_id:1 }));
+    assert.equal(s.get(id).geloescht, true); assert.equal(s.get(id).menge, menge == null ? null : 0);
+  }
 });

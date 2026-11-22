@@ -228,14 +228,25 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
     @_logged
-    async def add_to_shopping_list(items: Annotated[list[ShoppingItem], Field(min_length=1, max_length=100)]) -> list[dict]:
+    async def add_to_shopping_list(
+        items: Annotated[list[ShoppingItem] | None, Field(min_length=1, max_length=100)] = None,
+        text: Annotated[str | None, Field(min_length=1, max_length=2000)] = None,
+    ) -> list[dict]:
         """Add up to 100 items to the shared shopping list.
+
+        Supply exactly one of items or text. Free text (max 2000 characters)
+        accepts quantities, parenthesized notes and multiple entries separated
+        by newlines, semicolons or commas (decimal commas are preserved).
 
         Equal names with compatible units merge automatically, adding quantities.
         Pass structured quantities: "2 kg Kartoffeln" becomes name="Kartoffeln",
         quantity=2, unit="kg". First call get_shopping_list to inspect existing
         items and their item_id. Changes appear immediately on all devices.
         """
+        if (items is None) == (text is None):
+            raise ValueError("Supply exactly one of items or text")
+        if text is not None:
+            return await client.add_shopping_items(text=text)
         return await client.add_shopping_items([item.model_dump() for item in items])
 
     @server.tool(annotations=ToolAnnotations(
