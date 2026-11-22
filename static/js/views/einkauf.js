@@ -1,17 +1,38 @@
 import store from '../einkauf-store.js';
-import { formatAmount, unitMultiplier, groupByKategorie } from '../einkauf-core.js';
+import { formatAmount, unitMultiplier, groupByKategorie, rankAutocomplete } from '../einkauf-core.js';
 import { parseEintrag, splitMehrfach } from '../mengen-parser.js';
 import { toast, toastAction, x, shareText } from '../utils.js';
 import { openDetail } from './detail.js';
 
 let entries = [];
+let matches = [], activeMatch = -1;
 let armedRecipe = null, recipeTimer, editing, previousFocus;
 let suppressClick = false, dragging = false;
 
 export function initEinkauf() {
   document.getElementById('einkauf-add')?.addEventListener('submit', addEntry);
   const input = document.getElementById('einkauf-name');
-  input?.addEventListener('input', preview);
+  input?.setAttribute('role', 'combobox');
+  input?.setAttribute('aria-autocomplete', 'list');
+  input?.setAttribute('aria-controls', 'einkauf-autocomplete');
+  input?.setAttribute('aria-expanded', 'false');
+  input?.addEventListener('input', () => { preview(); autocomplete(); });
+  input?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { closeAutocomplete(); return; }
+    if (!matches.length) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      activeMatch = (activeMatch + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length;
+      renderAutocomplete();
+    }
+    if (event.key === 'Enter') { event.preventDefault(); chooseMatch(Math.max(0, activeMatch)); }
+  });
+  input?.addEventListener('blur', () => setTimeout(closeAutocomplete, 150));
+  document.getElementById('einkauf-autocomplete')?.addEventListener('pointerdown', event => {
+    const button = event.target.closest('[data-match]');
+    if (button) { event.preventDefault(); chooseMatch(Number(button.dataset.match)); }
+  });
+  initSuggestions();
   input?.addEventListener('paste', event => {
     const text = event.clipboardData?.getData('text');
     if (!text || !/[\r\n]/u.test(text)) return;
@@ -77,6 +98,7 @@ export function initEinkauf() {
 export async function loadEinkauf() {
   await store.init();
   render();
+  store.refreshSuggestions().catch(() => {});
   store.scheduleSync(0);
 }
 
@@ -122,6 +144,8 @@ function render() {
   }
   document.getElementById('einkauf-done').innerHTML = rows(done);
   document.getElementById('einkauf-clean').hidden = !done.length;
+  renderSuggestions();
+  renderPantry();
 }
 
 function renderStatus() {
@@ -129,6 +153,8 @@ function renderStatus() {
   if (!el) return;
   const status = store.status();
   el.className = 'shopping-status' + (!status.online ? ' offline' : status.fehler ? ' problem' : '');
+  const planned = document.getElementById('einkauf-planned');
+  if (planned) planned.hidden = !status.online || !store.vorschlaege().wochenplan.length;
   el.textContent = !status.online ? `Offline – ${status.pending} Änderungen ausstehend`
     : status.fehler ? 'Verbindungsproblem – neuer Versuch …'
     : status.pending ? `${status.pending} Änderungen ausstehend` : 'Synchron';
@@ -191,7 +217,7 @@ function addText(text, pasted = false) {
         merged = row;
       } else undo.push(() => store.remove(id));
     }
-    document.getElementById('einkauf-name').value = ''; preview();
+    document.getElementById('einkauf-name').value = ''; preview(); closeAutocomplete();
     if (pasted || parsed.length > 1 || merged) {
       const message = parsed.length === 1 && merged && !pasted
         ? `${merged.name}: jetzt ${formatAmount({ ...merged, name: null })}`
@@ -207,6 +233,127 @@ function addEntry(event) {
   event.preventDefault();
   addText(document.getElementById('einkauf-name').value);
 }
+
+function closeAutocomplete() {
+  matches = []; activeMatch = -1;
+  const box = document.getElementById('einkauf-autocomplete');
+  if (box) { box.hidden = true; box.innerHTML = ''; }
+  const input = document.getElementById('einkauf-name');
+  input?.setAttribute('aria-expanded', 'false');
+  input?.setAttribute('aria-activedescendant', '');
+}
+
+function autocomplete() {
+  const text = document.getElementById('einkauf-name').value;
+  matches = splitMehrfach(text).length === 1 ? rankAutocomplete(parseEintrag(text).name, store.artikel(), store.entries()) : [];
+  activeMatch = -1; renderAutocomplete();
+}
+
+function renderAutocomplete() {
+  const box = document.getElementById('einkauf-autocomplete');
+  if (!box) return;
+  box.hidden = !matches.length;
+  box.innerHTML = matches.map((item, i) => `<button type="button" role="option" id="shopping-match-${i}" aria-selected="${i === activeMatch}" data-match="${i}">${x(item.name)}${item.letzte_menge != null || item.letzte_einheit ? ' · ' + x(formatAmount({ menge:item.letzte_menge, einheit:item.letzte_einheit })) : ''}</button>`).join('');
+  const input = document.getElementById('einkauf-name');
+  input.setAttribute('aria-expanded', String(!!matches.length));
+  input.setAttribute('aria-activedescendant', activeMatch >= 0 ? `shopping-match-${activeMatch}` : '');
+}
+
+function chooseMatch(index) {
+  const item = matches[index];
+  if (!item) return;
+  const typed = parseEintrag(document.getElementById('einkauf-name').value);
+  const quantity = typed.menge !== null || typed.menge_text || typed.einheit ? typed : { menge:item.letzte_menge, einheit:item.letzte_einheit };
+  try {
+    store.add(item.name, { ...quantity, notiz:typed.notiz });
+    document.getElementById('einkauf-name').value = ''; preview(); closeAutocomplete();
+  } catch (error) { toast(error.message, 'err'); }
+}
+
+function suggestionChips(items, dismiss = false) {
+  const open = new Set(store.entries().filter(row => !row.erledigt).map(row => row.name.trim().toLocaleLowerCase('de')));
+  return items.filter(item => !open.has(item.anzeigename.trim().toLocaleLowerCase('de'))).map(item =>
+    `<span class="shopping-suggestion"><button type="button" data-suggest="${x(item.name_norm)}">${x(item.anzeigename)}${item.letzte_menge != null ? ' · ' + x(formatAmount({ menge:item.letzte_menge, einheit:item.letzte_einheit })) : ''}</button>${dismiss ? `<button type="button" data-dismiss="${x(item.name_norm)}" aria-label="${x(item.anzeigename)} diesmal nicht">×</button>` : ''}</span>`).join('');
+}
+
+function renderSuggestions() {
+  const suggestions = store.vorschlaege();
+  const due = document.getElementById('einkauf-due-chips');
+  if (due) {
+    due.innerHTML = suggestionChips(suggestions.faellig, true);
+    document.getElementById('einkauf-due').hidden = !due.innerHTML;
+  }
+  const recent = document.getElementById('einkauf-recent-chips');
+  if (recent) recent.innerHTML = suggestionChips(suggestions.zuletzt);
+  const planned = document.getElementById('einkauf-planned');
+  if (planned) {
+    planned.hidden = !store.status().online || !suggestions.wochenplan.length;
+    planned.innerHTML = `<p>${suggestions.wochenplan.length} geplante Rezepte noch nicht auf der Liste</p><button type="button" class="btn btn-accent" data-add-planned>Zur Liste hinzufügen</button>`;
+  }
+}
+
+function initSuggestions() {
+  for (const id of ['einkauf-due-chips', 'einkauf-recent-chips']) {
+    const container = document.getElementById(id);
+    let hold, held = false, start;
+    const dismiss = name => store.hideSuggestion(name).catch(error => toast(error.message, 'err'));
+    container?.addEventListener('click', event => {
+      if (held) { held = false; return; }
+      const hide = event.target.closest('[data-dismiss]');
+      if (hide) { dismiss(hide.dataset.dismiss); return; }
+      const button = event.target.closest('[data-suggest]');
+      if (!button) return;
+      const suggestions = store.vorschlaege();
+      const item = [...suggestions.faellig, ...suggestions.zuletzt].find(row => row.name_norm === button.dataset.suggest);
+      if (item) try { store.add(item.anzeigename, { menge:item.letzte_menge, einheit:item.letzte_einheit }); }
+      catch (error) { toast(error.message, 'err'); }
+    });
+    if (id !== 'einkauf-due-chips') continue;
+    container?.addEventListener('pointerdown', event => {
+      const button = event.target.closest('[data-suggest]');
+      if (!button) return;
+      held = false; start = { x:event.clientX, y:event.clientY };
+      hold = setTimeout(() => { held = true; dismiss(button.dataset.suggest); }, 600);
+    });
+    container?.addEventListener('pointermove', event => {
+      if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) clearTimeout(hold);
+    });
+    for (const type of ['pointerup', 'pointercancel', 'pointerleave']) container?.addEventListener(type, () => clearTimeout(hold));
+  }
+  document.getElementById('einkauf-planned')?.addEventListener('click', async event => {
+    const button = event.target.closest('[data-add-planned]');
+    if (!button || button.disabled) return;
+    button.disabled = true;
+    try { await store.addPlannedRecipes(); }
+    catch (error) { toast(error.message, 'err'); }
+    finally { button.disabled = false; }
+  });
+  document.getElementById('einkauf-pantry')?.addEventListener('change', event => {
+    if (event.target.dataset.pantry) store.setPantry(event.target.dataset.pantry, event.target.checked).catch(error => toast(error.message, 'err'));
+  });
+  document.getElementById('einkauf-hidden')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-unhide]');
+    if (button) store.hideSuggestion(button.dataset.unhide, 0).catch(error => toast(error.message, 'err'));
+  });
+  document.getElementById('einkauf-pantry-add')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const input = document.getElementById('einkauf-pantry-name');
+    try { await store.setPantry(input.value, true); input.value = ''; }
+    catch (error) { toast(error.message, 'err'); }
+  });
+}
+
+function renderPantry() {
+  const pantry = document.getElementById('einkauf-pantry'), hidden = document.getElementById('einkauf-hidden');
+  const articles = store.artikel(), offline = !store.status().online;
+  // Keep switched-off pantry articles visible for the duration of this session.
+  for (const item of articles) if (item.vorrat) pantryNames.add(item.name_norm);
+  if (pantry) pantry.innerHTML = articles.filter(item => pantryNames.has(item.name_norm)).map(item =>
+    `<label class="shopping-order-row">${x(item.anzeigename)}<input type="checkbox" role="switch" data-pantry="${x(item.anzeigename)}" ${item.vorrat ? 'checked' : ''} ${offline ? 'disabled' : ''}></label>`).join('');
+  if (hidden) hidden.innerHTML = articles.filter(item => item.ausgeblendet && (!item.ausgeblendet_bis || Date.parse(item.ausgeblendet_bis + 'Z') > Date.now())).map(item =>
+    `<div class="shopping-order-row"><span>${x(item.anzeigename)}</span><button type="button" class="btn btn-ghost" data-unhide="${x(item.anzeigename)}" ${offline ? 'disabled' : ''}>Wieder zeigen</button></div>`).join('') || '<p>Keine ausgeblendeten Vorschläge</p>';
+}
+const pantryNames = new Set();
 
 function confirmRecipe(id) {
   clearTimeout(recipeTimer);

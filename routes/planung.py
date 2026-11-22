@@ -98,7 +98,8 @@ def wochenplan_einkaufsliste(body: dict):
             cur.execute("""SELECT w.rezept_id, w.portionen AS plan_portionen, r.id, r.titel, r.portionen, r.zutaten
                 FROM wochenplan w JOIN rezepte r ON r.id=w.rezept_id WHERE w.datum BETWEEN %s AND %s""", (start, end))
             items = []
+            vorrat = []
             for recipe in cur.fetchall():
-                items.extend(zutaten_fuer_einkauf(recipe, recipe["plan_portionen"] or recipe["portionen"] or 1))
+                items.extend(zutaten_fuer_einkauf(recipe, recipe["plan_portionen"] or recipe["portionen"] or 1, cur, vorrat))
             changed = merge_or_add(cur, items)
-    return {"anzahl": len(changed)}
+    return {"anzahl": len(changed), "vorrat": vorrat}

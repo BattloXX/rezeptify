@@ -226,6 +226,16 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         return await client.get_shopping_list(include_done)
 
     @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    @_logged
+    async def get_shopping_suggestions() -> dict:
+        """Suggest missing items to the user from due/frequent purchases and planned recipes.
+
+        Nothing is added automatically; use these suggestions to ask the user what they need.
+        """
+        return await client.get_shopping_suggestions()
+
+    @server.tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
     @_logged
     async def add_to_shopping_list(
@@ -252,8 +262,11 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
     @_logged
-    async def add_recipe_to_shopping_list(recipe_id: int, servings: int | None = None) -> list[dict]:
+    async def add_recipe_to_shopping_list(recipe_id: int, servings: int | None = None) -> dict:
         """Add a recipe's ingredients, scaled to servings (default: recipe servings).
+
+        Returns {items, skipped_pantry}. Pantry staples (salt, pepper, oil, ...) are
+        skipped and listed in skipped_pantry; add them explicitly if needed.
 
         Equal names with compatible units merge automatically, adding quantities.
         First call get_shopping_list to inspect items and obtain their item_id

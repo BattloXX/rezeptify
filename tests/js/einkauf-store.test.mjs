@@ -29,6 +29,8 @@ async function setup(t, handler, saved = null) {
     storage: { load: async () => snapshot, save: async data => { snapshot = structuredClone(data); } },
     toast: msg => messages.push(msg),
     api: async (path, opts) => {
+      if (path.startsWith('/api/einkauf/artikel?')) return { artikel:[] };
+      if (path.startsWith('/api/einkauf/vorschlaege')) return { faellig:[], haeufig:[], zuletzt:[], wochenplan:[] };
       if (path === '/api/einkauf/kategorien') return { kategorien: [] };
       if (path === '/api/einkauf/laeden') return { laeden: [] };
       assert.equal(path, '/api/einkauf/sync');
@@ -221,6 +223,8 @@ test('catalog and shop choice survive offline reload and retry a failed PATCH', 
         if (++attempts === 1) throw new Error('offline');
         return {};
       }
+      if (path.startsWith('/api/einkauf/artikel?')) return { artikel:[] };
+      if (path.startsWith('/api/einkauf/vorschlaege')) return { faellig:[], haeufig:[], zuletzt:[], wochenplan:[] };
       if (path === '/api/einkauf/kategorien') return { kategorien:cached.kategorien };
       if (path === '/api/einkauf/laeden') return { laeden:cached.laeden };
       if (path.includes('?laden=')) return { kategorien:cached.reihenfolgen[4] };
@@ -239,4 +243,53 @@ test('catalog and shop choice survive offline reload and retry a failed PATCH', 
   assert.equal(snapshot.ladenId, 4);
   assert.equal(attempts, 2);
   await store.dispose();
+});
+
+
+test('article and suggestion caches survive offline reload, throttle refresh and retry dirty suggestions after 60 seconds', async t => {
+  let connected = true, time = now, snapshot, serverSeq = 1;
+  const calls = [];
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { configurable:true, value:{ get onLine() { return connected; } } });
+  t.after(() => original ? Object.defineProperty(globalThis, 'navigator', original) : delete globalThis.navigator);
+  t.mock.method(globalThis, 'setTimeout', () => ({ unref() {} }));
+  t.mock.method(globalThis, 'clearTimeout', () => {});
+  const options = { now:() => time, storage:{ load:async () => snapshot, save:async data => { snapshot = structuredClone(data); } },
+    api:async (path, opts) => {
+      calls.push(path);
+      if (path.startsWith('/api/einkauf/artikel?')) return { artikel:[{ anzeigename:'Milch', letzte_menge:2 }] };
+      if (path.startsWith('/api/einkauf/vorschlaege')) return { faellig:[{ anzeigename:'Milch' }], haeufig:[], zuletzt:[], wochenplan:[] };
+      if (path === '/api/einkauf/kategorien') return { kategorien:[] };
+      if (path === '/api/einkauf/laeden') return { laeden:[] };
+      return answer(JSON.parse(opts.body), [], { seq:serverSeq });
+    },
+  };
+  const store = createStore(options);
+  await store.init();
+  assert.equal(store.artikel()[0].anzeigename, 'Milch');
+  await store.refreshSuggestions();
+  const count = prefix => calls.filter(path => path.startsWith(prefix)).length;
+  assert.equal(count('/api/einkauf/vorschlaege'), 1);
+  await store.sync(); // changed seq, but the previous request is still within 60 seconds
+  assert.equal(count('/api/einkauf/vorschlaege'), 1);
+  time += 60001;
+  await store.sync(); // no new changes: the dirty cache must still be refreshed
+  assert.equal(count('/api/einkauf/vorschlaege'), 2);
+  // Changes (purchases) refresh the article cache too, at most once a minute.
+  assert.equal(count('/api/einkauf/artikel?'), 2);
+  await store.sync(); // nothing changed: no further article request
+  assert.equal(count('/api/einkauf/artikel?'), 2);
+  time += 6 * 3600000;
+  await store.sync();
+  assert.equal(count('/api/einkauf/artikel?'), 3);
+  await store.dispose();
+  connected = false;
+  const restored = createStore(options);
+  await restored.init();
+  assert.equal(restored.artikel()[0].letzte_menge, 2);
+  assert.equal(restored.vorschlaege().faellig[0].anzeigename, 'Milch');
+  const before = calls.length;
+  await restored.refreshSuggestions(); await restored.refreshArticles();
+  assert.equal(calls.length, before);
+  await restored.dispose();
 });

@@ -317,12 +317,19 @@ class RezeptifyClient:
         self._raise_for_status(response)
         return response.json()
 
-    async def add_recipe_to_shopping_list(self, recipe_id: int, servings: int | None = None) -> list[dict]:
+    async def add_recipe_to_shopping_list(self, recipe_id: int, servings: int | None = None) -> dict:
         if servings is None:
             servings = (await self._get_recipe_raw(recipe_id))["portionen"]
         response = await self._client.post(f"/api/rezepte/{recipe_id}/zu-einkaufsliste", json={"portionen": servings})
         self._raise_for_status(response)
-        return [self._shopping_shape(item) for item in response.json()["eintraege"]]
+        return {"items": [self._shopping_shape(item) for item in response.json()["eintraege"]],
+                "skipped_pantry": response.json().get("vorrat", [])}
+
+    async def get_shopping_suggestions(self) -> dict:
+        response = await self._client.get("/api/einkauf/vorschlaege")
+        self._raise_for_status(response)
+        data = response.json()
+        return {"faellig": data["faellig"], "haeufig": data["haeufig"][:10], "wochenplan": data["wochenplan"]}
 
     async def add_week_plan_to_shopping_list(self, von: str, bis: str) -> list[dict]:
         response = await self._client.post("/api/wochenplan/einkaufsliste", json={"von": von, "bis": bis})

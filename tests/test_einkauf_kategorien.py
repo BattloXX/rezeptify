@@ -127,7 +127,7 @@ def test_article_search_ranking_limits_and_literal_wildcards(client):
     assert rows[1]['kategorie_id'] is not None and not rows[1]['vorrat']
     assert next(row for row in client.get('/api/einkauf/artikel', params={'q': 'Mehl'}).json()['artikel'] if row['anzeigename'] == 'Mehl')['vorrat']
     assert client.get('/api/einkauf/artikel', params={'q': '%'}).json()['artikel'] == []
-    assert client.get('/api/einkauf/artikel', params={'limit': 101}).status_code == 400
+    assert client.get('/api/einkauf/artikel', params={'limit': 501}).status_code == 400
 
 
 def test_category_endpoints_require_auth(client, monkeypatch):

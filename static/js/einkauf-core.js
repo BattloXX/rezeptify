@@ -328,3 +328,22 @@ export function groupByKategorie(entries, kategorienSortiert) {
   }
   return groups.filter(group => group.entries.length);
 }
+
+
+export function rankAutocomplete(query, articles, entries = []) {
+  const needle = normalizeName(query);
+  if (!needle) return [];
+  const candidates = new Map();
+  for (const article of articles) candidates.set(normalizeName(article.anzeigename), { ...article, name:article.anzeigename });
+  for (const entry of entries) {
+    const key = normalizeName(entry.name);
+    if (!candidates.has(key)) candidates.set(key, { name:entry.name, letzte_menge:entry.menge, letzte_einheit:entry.einheit, anzahl_gekauft:0 });
+  }
+  return [...candidates.values()].map(item => {
+    const name = normalizeName(item.name);
+    const score = name.startsWith(needle) ? 0 : name.split(/\s+/u).some(word => word.startsWith(needle)) ? 1 : name.includes(needle) ? 2 : 3;
+    return { item, score };
+  }).filter(({ score }) => score < 3).sort((a, b) => a.score - b.score ||
+    (b.item.anzahl_gekauft || 0) - (a.item.anzahl_gekauft || 0) || a.item.name.localeCompare(b.item.name, 'de'))
+    .slice(0, 6).map(({ item }) => item);
+}

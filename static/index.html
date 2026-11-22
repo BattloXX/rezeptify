@@ -398,12 +398,16 @@
 
     <!-- ── EINKAUF view ──────────────────────────────────────────────── -->
     <section id="view-einkauf" class="view">
-      <div class="shopping-header"><h2>Einkaufsliste</h2><select id="einkauf-laden" class="fc shopping-shop" aria-label="Laden"><option value="">Kein Laden</option></select><button id="einkauf-manage" class="icon-pill" type="button">Läden &amp; Reihenfolge</button><button class="icon-pill" onclick="shareShopping()"><span class="material-symbols-outlined">share</span> Teilen</button></div>
+      <div class="shopping-header"><h2>Einkaufsliste</h2><select id="einkauf-laden" class="fc shopping-shop" aria-label="Laden"><option value="">Kein Laden</option></select><button id="einkauf-manage" class="icon-pill" type="button">Einstellungen</button><button class="icon-pill" onclick="shareShopping()"><span class="material-symbols-outlined">share</span> Teilen</button></div>
       <div id="einkauf-status" class="shopping-status" role="status"></div>
       <form id="einkauf-add" class="shopping-add"><input id="einkauf-name" class="fc" placeholder="Eintrag hinzufügen…" autocomplete="off"><button class="btn btn-accent" type="submit"><span class="material-symbols-outlined">add</span> Hinzufügen</button></form>
+      <div id="einkauf-autocomplete" class="shopping-autocomplete" role="listbox" hidden></div>
       <div id="einkauf-preview" class="shopping-preview" role="status" hidden></div>
+      <section id="einkauf-due" hidden><h3>Wieder fällig</h3><div id="einkauf-due-chips" class="shopping-chips"></div></section>
+      <aside id="einkauf-planned" class="shopping-plan-hint" hidden></aside>
       <div class="shopping-section"><h3>Offen</h3><div id="einkauf-open"></div></div>
       <div class="shopping-section"><div class="shopping-done-head"><h3>Erledigt</h3><button id="einkauf-clean" class="btn btn-ghost" onclick="clearDone()" hidden>Erledigte löschen</button></div><div id="einkauf-done"></div></div>
+      <details id="einkauf-recent"><summary>Zuletzt gekauft</summary><div id="einkauf-recent-chips" class="shopping-chips"></div></details>
     </section>
 
     <section id="view-wochenplan" class="view">
@@ -493,6 +497,9 @@
       <form id="einkauf-shop-form"><label>Name<input id="einkauf-shop-rename" class="fc" required maxlength="80"></label><label><input id="einkauf-shop-active" type="checkbox"> Aktiv</label><label><input id="einkauf-shop-default" type="checkbox"> Standard</label><button class="btn btn-ghost" type="submit">Speichern</button><button id="einkauf-shop-delete" class="btn btn-ghost" type="button">Löschen</button></form>
       <p>Kategorien mit ↑ und ↓ ordnen.</p><div id="einkauf-shop-order"></div>
       <button id="einkauf-shop-save-order" class="btn btn-accent" type="button">Reihenfolge speichern</button>
+      <section><h3>Vorrat</h3><div id="einkauf-pantry"></div>
+        <form id="einkauf-pantry-add" class="shopping-add"><input id="einkauf-pantry-name" class="fc" maxlength="255" required placeholder="Vorrat ergänzen" aria-label="Vorratsartikel"><button class="btn btn-ghost" type="submit">Ergänzen</button></form></section>
+      <section><h3>Ausgeblendete Vorschläge</h3><div id="einkauf-hidden"></div></section>
       <p id="einkauf-shop-message" role="status"></p>
     </div>
   </div>

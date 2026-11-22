@@ -425,9 +425,11 @@ async def test_add_recipe_to_shopping_list_uses_requested_or_recipe_servings(ser
 
     client = RezeptifyClient("https://rezeptify.example", "secret", transport=httpx.MockTransport(handler))
     try:
-        items = await client.add_recipe_to_shopping_list(7, servings)
+        result = await client.add_recipe_to_shopping_list(7, servings)
+        items = result["items"]
         assert items[0]["id"] == _shopping_row()["uuid"]
         assert items[0]["recipes"] == ['Pudding']
+        assert result["skipped_pantry"] == []
     finally:
         await client.aclose()
     assert len(requests) == (2 if servings is None else 1)

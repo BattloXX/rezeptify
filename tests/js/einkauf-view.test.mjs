@@ -33,7 +33,7 @@ class Element {
 }
 
 async function setup(t, speech = false) {
-  const ids = ['einkauf-add', 'einkauf-name', 'einkauf-preview', 'einkauf-open', 'einkauf-done', 'einkauf-clean', 'einkauf-status', 'ov-einkauf-edit', 'einkauf-edit',
+  const ids = ['einkauf-autocomplete', 'einkauf-add', 'einkauf-name', 'einkauf-preview', 'einkauf-open', 'einkauf-done', 'einkauf-clean', 'einkauf-status', 'ov-einkauf-edit', 'einkauf-edit',
     ...['name', 'amount', 'unit', 'text', 'note', 'category'].map(key => 'einkauf-edit-' + key)];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const timers = [], messages = [];
@@ -49,7 +49,7 @@ async function setup(t, speech = false) {
     t.after(() => original ? Object.defineProperty(globalThis, key, original) : delete globalThis[key]);
   }
   let snapshot;
-  const store = createStore({ storage:{ load:async () => null, save:async data => { snapshot = data; } } });
+  const store = createStore({ storage:{ load:async () => ({ artikel:[{ anzeigename:'Milch', letzte_menge:2, letzte_einheit:'l', anzahl_gekauft:5 }] }), save:async data => { snapshot = data; } } });
   await store.init();
   t.after(() => store.dispose());
   globalThis.__p3ViewStore = store;
@@ -198,4 +198,26 @@ test('long press moves an open entry to another category and done entries do not
   e['einkauf-done'].fire('pointerdown', { target:hit, pointerId:2, isPrimary:true, clientX:10, clientY:20 });
   assert.equal(timers.length, count);
   e['einkauf-done'].fire('pointercancel');
+});
+
+
+test('autocomplete Enter uses saved quantities; typed amounts win; Escape and arrows update selection', async t => {
+  const { store, elements:e } = await setup(t);
+  const input = e['einkauf-name'], box = e['einkauf-autocomplete'];
+  input.value = 'Mil'; input.fire('input');
+  assert.equal(box.hidden, false);
+  assert.match(box.innerHTML, /Milch · 2 l/);
+  input.fire('keydown', { key:'Enter' });
+  assert.equal(store.entries()[0].name, 'Milch');
+  assert.equal(store.entries()[0].menge, 2);
+  assert.equal(box.hidden, true);
+  input.value = '500 ml Mil'; input.fire('input');
+  input.fire('keydown', { key:'ArrowDown' });
+  assert.match(box.innerHTML, /aria-selected="true"/);
+  input.fire('keydown', { key:'Enter' });
+  assert.equal(store.entries()[0].menge, 2.5);
+  assert.equal(store.entries()[0].einheit, 'l');
+  input.value = 'Mil'; input.fire('input');
+  input.fire('keydown', { key:'Escape' });
+  assert.equal(box.hidden, true);
 });

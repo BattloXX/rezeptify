@@ -95,7 +95,7 @@ def _decimal_amount(value):
         return None
 
 
-def zutaten_fuer_einkauf(rezept, portionen):
+def zutaten_fuer_einkauf(rezept, portionen, cur=None, vorrat=None):
     """Return scaled, merge-ready shopping entries for one recipe row."""
     base_portionen = rezept.get("portionen") or 0
     faktor = portionen / base_portionen if base_portionen else 1
@@ -118,17 +118,30 @@ def zutaten_fuer_einkauf(rezept, portionen):
             "herkunft": [{"rezept_id": rezept["id"], "rezept_titel": rezept["titel"],
                            "menge": scaled, "einheit": zutat.get("einheit") or ""}],
         })
+    if cur is not None:
+        cur.execute("SELECT name_norm FROM einkauf_artikel WHERE vorrat=1")
+        pantry = {row["name_norm"] for row in cur.fetchall()}
+        kept = []
+        for item in items:
+            if normalize_name(item["name"]) in pantry:
+                if vorrat is not None:
+                    origin = item["herkunft"][0]
+                    vorrat.append({"name": item["name"], "menge_text": " ".join(
+                        str(part) for part in (origin["menge"], item["einheit"]) if part)})
+            else:
+                kept.append(item)
+        return kept
     return items
 
 
-def merge_or_add(cur, eintraege):
+def merge_or_add(cur, eintraege, liste=None):
     """Persist entries through the sync engine and return the resulting rows."""
     from uuid import uuid4
     from db import parse_json_field
     from services.einkauf_sync import apply_ops, server_op, standard_liste
 
     result = []
-    liste = standard_liste(cur)
+    liste = liste or standard_liste(cur)
     for entry in eintraege:
         amount = entry.get("menge")
         origin = entry.get("herkunft") or []

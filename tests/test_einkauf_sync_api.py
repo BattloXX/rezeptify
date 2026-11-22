@@ -92,10 +92,10 @@ def test_legacy_writes_appear_as_sync_changes(client):
     assert client.get('/api/einkaufsliste').json()["eintraege"] == []
     previous = sync(client)["seq"]
     rid = client.post('/api/rezepte', json={"titel": "Test", "portionen": 2,
-                      "zutaten": [{"name": "Mehl", "menge": "100", "einheit": "g"}]}).json()["id"]
+                      "zutaten": [{"name": "Reis", "menge": "100", "einheit": "g"}]}).json()["id"]
     assert client.post(f'/api/rezepte/{rid}/zu-einkaufsliste', json={"portionen": 4}).status_code == 200
     added = sync(client, previous)["eintraege"]
-    assert len(added) == 1 and added[0]["name"] == 'Mehl' and added[0]["menge"] == 200
+    assert len(added) == 1 and added[0]["name"] == "Reis" and added[0]["menge"] == 200
     previous = sync(client)["seq"]
     assert client.post('/api/wochenplan', json={"rezept_id": rid, "datum": "2026-11-21"}).status_code == 201
     assert client.post('/api/wochenplan/einkaufsliste', json={"von": "2026-11-21", "bis": "2026-11-21"}).status_code == 200

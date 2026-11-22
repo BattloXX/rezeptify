@@ -1,6 +1,6 @@
 import shoppingStore, { onAnyShoppingChange } from '../einkauf-store.js';
 import { api, apiFetch } from '../api.js';
-import { askImageUrl, toast, x, safeUrl, safeImageUrl, EM, optimisticToggle, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
+import { askImageUrl, toast, toastAction, x, safeUrl, safeImageUrl, EM, optimisticToggle, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
 import { S } from '../app.js';
 import { loadGrid } from './home.js';
 import { openEditForm } from './form.js';
@@ -349,10 +349,16 @@ async function addToShoppingList() {
   if (!S.current) return;
   const btn = document.getElementById('btn-add-shopping');
   try {
-    await api('/api/rezepte/' + S.current.id + '/zu-einkaufsliste', {
+    const result = await api('/api/rezepte/' + S.current.id + '/zu-einkaufsliste', {
       method: 'POST', body: JSON.stringify({ portionen: portionState.current })
     });
     await onAnyShoppingChange();
+    if (result.vorrat?.length) {
+      await shoppingStore.init();
+      toastAction(`${result.vorrat.map(item => item.name).join(', ')} vermutlich zuhause`, 'Trotzdem hinzufügen', () => {
+        for (const item of result.vorrat) shoppingStore.add(item.name, { menge_text:item.menge_text || null });
+      });
+    }
     const old = btn.innerHTML;
     btn.innerHTML = '<span class="material-symbols-outlined">check</span> Hinzugefügt!';
     setTimeout(() => { if (btn) btn.innerHTML = old; }, 2500);

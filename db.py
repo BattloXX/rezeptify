@@ -419,6 +419,10 @@ def init_db():
                 WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='einkaufslisten' AND COLUMN_NAME='laden_id'""")
             if not cur.fetchone()["n"]:
                 cur.execute("ALTER TABLE einkaufslisten ADD COLUMN laden_id INT NULL")
+            cur.execute("""SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='einkauf_artikel' AND COLUMN_NAME='ausgeblendet_bis'""")
+            if not cur.fetchone()["n"]:
+                cur.execute("ALTER TABLE einkauf_artikel ADD COLUMN ausgeblendet_bis DATETIME NULL")
             from services.einkauf_woerterbuch import seed
             seed(cur)
         conn.commit()

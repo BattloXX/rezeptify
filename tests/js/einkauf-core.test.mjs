@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 // Node 20 treats .js as CommonJS without a package.json; load the browser ES module explicitly.
 const source = await readFile(new URL('../../static/js/einkauf-core.js', import.meta.url), 'utf8');
 const { createClock, parseHlc, compareHlc, rangZwischen, rangInitial, rangNach, normalizeName,
-  unitFamily, unitMultiplier, applyOpLocal, rebase, makeOp, sortedEntries, formatAmount, groupByKategorie } =
+  unitFamily, unitMultiplier, applyOpLocal, rebase, makeOp, sortedEntries, formatAmount, groupByKategorie, rankAutocomplete } =
   await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const fixture = JSON.parse(await readFile(new URL('../fixtures/rang_cases.json', import.meta.url), 'utf8'));
 const hlc = (t = 0, device = 'geraetA') => `${1600000000000 + t}-0000-${device}`;
@@ -270,4 +270,17 @@ test('category grouping preserves store order, rank order and hides empty/done/d
   assert.deepEqual(groupByKategorie([], categories), []);
   assert.equal(groupByKategorie(rows, []).length, 1);
   assert.equal(categories[0].entries, undefined);
+});
+
+
+test('autocomplete ranks prefix before word start before substring, then frequency; deduplicates and caps at six', () => {
+  const articles = [
+    { anzeigename:'Hafermilch', anzahl_gekauft:100 }, { anzeigename:'Bio Milch', anzahl_gekauft:50 },
+    { anzeigename:'Milchreis', anzahl_gekauft:2 }, { anzeigename:'Milch', anzahl_gekauft:3, letzte_menge:2, letzte_einheit:'l' },
+  ];
+  const ranked = rankAutocomplete('MIL', articles, [{ name:' Milch ', menge:9 }, { name:'Milde Butter' }]);
+  assert.deepEqual(ranked.map(row => row.name), ['Milch', 'Milchreis', 'Milde Butter', 'Bio Milch', 'Hafermilch']);
+  assert.equal(ranked[0].letzte_menge, 2);
+  assert.deepEqual(rankAutocomplete('', articles), []);
+  assert.equal(rankAutocomplete('a', Array.from({ length:10 }, (_, i) => ({ anzeigename:'A' + i }))).length, 6);
 });

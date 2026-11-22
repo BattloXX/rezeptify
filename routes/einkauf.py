@@ -1,5 +1,7 @@
 """Authenticated shopping-list endpoints."""
 import time
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException
@@ -159,7 +161,10 @@ def rezept_hinzufuegen(rid: int, body: dict):
             cur.execute("SELECT id, titel, portionen, zutaten FROM rezepte WHERE id=%s", (rid,))
             recipe = cur.fetchone()
             if not recipe: raise HTTPException(404, "Rezept nicht gefunden")
-            return {"eintraege": [_serialize(row) for row in merge_or_add(cur, zutaten_fuer_einkauf(recipe, portionen))]}
+            vorrat = []
+            items = zutaten_fuer_einkauf(recipe, portionen, cur, vorrat)
+            liste = _uuid_liste(cur, body.get("liste"))
+            return {"eintraege": [_serialize(row) for row in merge_or_add(cur, items, liste)], "vorrat": vorrat}
 
 
 @router.post("/api/einkaufsliste/aufraeumen")
@@ -424,12 +429,82 @@ def set_listen_laden(ident: str, body: dict):
 
 @router.get("/api/einkauf/artikel")
 def get_artikel(q: str = "", limit: int = 20):
-    if not 1 <= limit <= 100 or len(q) > 255:
+    if not 1 <= limit <= 500 or len(q) > 255:
         raise HTTPException(400, "Ungültige Suche")
     pattern = q.strip().replace("!", "!!").replace("%", "!%").replace("_", "!_")
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute("""SELECT name_norm,anzeigename,kategorie_id,letzte_menge,letzte_einheit,vorrat
-                FROM einkauf_artikel WHERE ausgeblendet=0 AND anzeigename LIKE %s ESCAPE '!'
+            cur.execute("""SELECT name_norm,anzeigename,kategorie_id,letzte_menge,letzte_einheit,vorrat,anzahl_gekauft,ausgeblendet,ausgeblendet_bis
+                FROM einkauf_artikel WHERE anzeigename LIKE %s ESCAPE '!'
                 ORDER BY anzahl_gekauft DESC,zuletzt_gekauft DESC,anzeigename LIMIT %s""", ('%' + pattern + '%', limit))
             return {"artikel": list(cur.fetchall())}
+
+
+@router.get("/api/einkauf/vorschlaege")
+def get_vorschlaege(liste: str | None = None):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            liste = _uuid_liste(cur, liste)
+            cur.execute("SELECT UTC_TIMESTAMP() AS zeit")
+            jetzt = cur.fetchone()["zeit"]
+            cur.execute("""SELECT name_norm,herkunft,erledigt FROM einkaufsliste_eintraege
+                WHERE liste_uuid=%s AND geloescht_am IS NULL""", (liste,))
+            rows = cur.fetchall()
+            offen = {row["name_norm"] for row in rows if not row["erledigt"]}
+            recipes = {origin.get("rezept_id") for row in rows for origin in parse_json_field(row["herkunft"]) or []}
+            cur.execute("""SELECT * FROM einkauf_artikel WHERE anzahl_gekauft>0
+                AND (ausgeblendet=0 OR (ausgeblendet_bis IS NOT NULL AND ausgeblendet_bis<=%s))""", (jetzt,))
+            articles = [row for row in cur.fetchall() if row["name_norm"] not in offen]
+            due = []
+            for row in articles:
+                interval = float(row["intervall_tage"] or 0)
+                if row["anzahl_gekauft"] >= 3 and row["zuletzt_gekauft"] and interval > 0:
+                    elapsed = (jetzt - row["zuletzt_gekauft"]).total_seconds() / 86400
+                    if elapsed >= interval:
+                        due.append({**row, "tage_ueber": elapsed - interval, "_ratio": elapsed / interval})
+            due.sort(key=lambda row: (-row["_ratio"], row["name_norm"]))
+            for row in due:
+                del row["_ratio"]
+            recent = sorted((row for row in articles if row["zuletzt_gekauft"]),
+                            key=lambda row: (row["zuletzt_gekauft"], row["name_norm"]), reverse=True)
+            frequent = sorted(articles, key=lambda row: (row["anzahl_gekauft"], row["zuletzt_gekauft"] or datetime.min, row["name_norm"]), reverse=True)
+            today = datetime.now(timezone.utc).astimezone(ZoneInfo("Europe/Vienna")).date()
+            cur.execute("""SELECT w.rezept_id,r.titel,w.datum,COALESCE(w.portionen,r.portionen,1) AS portionen
+                FROM wochenplan w JOIN rezepte r ON r.id=w.rezept_id WHERE w.datum BETWEEN %s AND %s
+                ORDER BY w.datum,w.id""", (today, today + timedelta(days=6)))
+            planned = [row for row in cur.fetchall() if row["rezept_id"] not in recipes]
+            return {"faellig": due[:12], "haeufig": frequent[:20], "zuletzt": recent[:20], "wochenplan": planned}
+
+
+def _artikel_name(body):
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip() or len(name) > 255:
+        raise HTTPException(400, "Name fehlt oder ist zu lang")
+    from services.shopping_service import normalize_name
+    return name.strip(), normalize_name(name)
+
+
+@router.post("/api/einkauf/vorschlaege/ausblenden")
+def vorschlag_ausblenden(body: dict):
+    name, norm = _artikel_name(body)
+    days = body.get("tage")
+    if days is not None and (type(days) is not int or not 0 <= days <= 36500):
+        raise HTTPException(400, "Ungültige Anzahl Tage")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""INSERT INTO einkauf_artikel (name_norm,anzeigename,ausgeblendet,ausgeblendet_bis)
+                VALUES (%s,%s,%s,DATE_ADD(UTC_TIMESTAMP(), INTERVAL %s DAY)) ON DUPLICATE KEY UPDATE
+                ausgeblendet=VALUES(ausgeblendet),ausgeblendet_bis=VALUES(ausgeblendet_bis)""", (norm, name, days != 0, days))
+    return {"ok": True}
+
+
+@router.post("/api/einkauf/artikel/vorrat")
+def artikel_vorrat(body: dict):
+    name, norm = _artikel_name(body)
+    if type(body.get("vorrat")) is not bool:
+        raise HTTPException(400, "Vorrat muss ein Wahrheitswert sein")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""INSERT INTO einkauf_artikel (name_norm,anzeigename,vorrat) VALUES (%s,%s,%s)
+                ON DUPLICATE KEY UPDATE vorrat=VALUES(vorrat)""", (norm, name, body["vorrat"]))
+    return {"ok": True}

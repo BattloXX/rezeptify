@@ -3,6 +3,7 @@ import json
 import re
 import threading
 import time
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -268,6 +269,50 @@ def _amount_plus(row, amount, unit):
     return _number(total / _multiplier(unit)), unit or None
 
 
+def _kauf_lernen(cur, row, erledigt, jetzt):
+    """Keep the purchase snapshot on the status op so a quick undo is reversible."""
+    if not row["erledigt"] and not erledigt:
+        return None
+    if row["erledigt"]:
+        cur.execute("""SELECT op_id,daten FROM einkauf_ops WHERE eintrag_uuid=%s
+            AND typ='status_setzen' AND ergebnis='ok' AND BINARY hlc=BINARY %s FOR UPDATE""",
+                    (row["uuid"], row["hlc_status"]))
+        previous = cur.fetchone()
+        saved = parse_json_field(previous["daten"]).get("_kauf") if previous else None
+        if erledigt:
+            return saved
+        if not saved or not 0 <= (jetzt - datetime.fromisoformat(saved["zeit"])).total_seconds() <= 600:
+            return None
+        cur.execute("SELECT * FROM einkauf_artikel WHERE name_norm=%s FOR UPDATE", (saved["name_norm"],))
+        article = cur.fetchone()
+        if article:
+            values = saved["vorher"]
+            # A later purchase of the same article must keep its own timestamp/interval.
+            latest = article["zuletzt_gekauft"] == datetime.fromisoformat(saved["zeit"])
+            cur.execute("""UPDATE einkauf_artikel SET anzahl_gekauft=GREATEST(0,anzahl_gekauft-1),
+                zuletzt_gekauft=%s,intervall_tage=%s WHERE name_norm=%s""",
+                        (values["zuletzt_gekauft"] if latest else article["zuletzt_gekauft"],
+                         values["intervall_tage"] if latest else article["intervall_tage"], saved["name_norm"]))
+        return None
+    norm = normalize_name(row["name"])
+    cur.execute("""INSERT IGNORE INTO einkauf_artikel (name_norm,anzeigename) VALUES (%s,%s)""", (norm, row["name"]))
+    cur.execute("SELECT * FROM einkauf_artikel WHERE name_norm=%s FOR UPDATE", (norm,))
+    article = cur.fetchone()
+    interval = article["intervall_tage"]
+    if article["zuletzt_gekauft"]:
+        days = (jetzt - article["zuletzt_gekauft"]).total_seconds() / 86400
+        if days >= .5:
+            interval = Decimal(str(days)) if interval is None else interval * Decimal('.7') + Decimal(str(days)) * Decimal('.3')
+            interval = min(Decimal('9999.99'), interval)
+    cur.execute("""UPDATE einkauf_artikel SET anzeigename=%s,kategorie_id=%s,letzte_menge=%s,
+        letzte_einheit=%s,anzahl_gekauft=anzahl_gekauft+1,intervall_tage=%s,zuletzt_gekauft=%s,
+        quelle='gelernt' WHERE name_norm=%s""",
+                (row["name"], row["kategorie_id"], row["menge"], row["einheit"], interval, jetzt, norm))
+    return {"name_norm": norm, "zeit": jetzt.isoformat(), "vorher": {
+        "zuletzt_gekauft": article["zuletzt_gekauft"].isoformat() if article["zuletzt_gekauft"] else None,
+        "intervall_tage": float(article["intervall_tage"]) if article["intervall_tage"] is not None else None}}
+
+
 def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
     cur.execute("SELECT seq FROM einkaufslisten WHERE uuid=%s FOR UPDATE", (liste_uuid,))
     liste = cur.fetchone()
@@ -302,6 +347,7 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
             continue
         cur.execute("SAVEPOINT einkauf_op")
         old_seq = seq
+        kauf = None
         try:
             _validate(op)
             typ, hlc, data = op["typ"], op["hlc"], op["daten"]
@@ -421,7 +467,9 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
                             values["name_norm"] = normalize_name(values["name"])
                         if typ == "status_setzen":
                             cur.execute("SELECT UTC_TIMESTAMP() AS zeit")
-                            values["erledigt_am"] = cur.fetchone()["zeit"] if data["erledigt"] else None
+                            jetzt = cur.fetchone()["zeit"]
+                            kauf = _kauf_lernen(cur, row, data["erledigt"], jetzt)
+                            values["erledigt_am"] = jetzt if data["erledigt"] else None
                         if typ == "menge_setzen":
                             family = _family(data["einheit"])
                             if not data["menge_text"] and family is not None:
@@ -465,6 +513,8 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
         if result["ergebnis"] == "ok" and op.get("typ") == "herkunft_entfernen" and removed_delta is not None:
             saved["_sync_delta"] = removed_delta
             saved["einheit"] = row["einheit"]
+        if result["ergebnis"] == "ok" and kauf is not None:
+            saved["_kauf"] = kauf
         saved["_sync_result"] = result
         try:
             encoded = json.dumps(saved, allow_nan=False, default=_json_default)

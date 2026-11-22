@@ -63,6 +63,8 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
   const events = new EventTarget();
   let initialized = false, initializing, server = new Map(), state = new Map(), aliases = new Map(), ops = [];
   let kategorien = [], laeden = [], reihenfolgen = {}, ladenId = null, pendingLaden = null, catalogLoaded = false, catalogAt = 0;
+  let artikel = [], artikelAt = 0, vorschlaege = { faellig:[], haeufig:[], zuletzt:[], wochenplan:[] }, suggestionsAt = null;
+  let articleRequest, suggestionRequest, suggestionsDirty = false;
   let clock, geraet, liste = null, seq = 0, nr = 0, lastSync = null, fehler = null;
   let timer, running, retry = 0, batchSize = 200, writes = Promise.resolve(), disposed = false;
   const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -70,7 +72,7 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
   function emit(type) { events.dispatchEvent(new Event(type)); }
   function persist() {
     const snapshot = { entries: [...server.values()], ops: structuredClone(ops), aliases: [...aliases],
-      seq, clock: clock.state(), geraet, liste, nr, lastSync, kategorien, laeden, reihenfolgen, ladenId, pendingLaden };
+      seq, clock: clock.state(), geraet, liste, nr, lastSync, kategorien, laeden, reihenfolgen, ladenId, pendingLaden, artikel, artikelAt, vorschlaege, suggestionsAt, suggestionsDirty };
     writes = writes.then(() => storage.save(snapshot)).catch(() => toast('Offline-Speicher nicht verfügbar'));
     return writes;
   }
@@ -113,6 +115,27 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
     kategorien = cats.kategorien; laeden = shops.laeden; reihenfolgen = Object.fromEntries(orders);
     catalogLoaded = true; catalogAt = now();
     emit('change'); await persist();
+  }
+  async function refreshArticles(force = false) {
+    if (!online() || (!force && artikelAt && now() - artikelAt < 6 * 3600000)) return;
+    if (articleRequest) return articleRequest;
+    articleRequest = (async () => {
+      const data = await api('/api/einkauf/artikel?limit=500');
+      artikel = data.artikel; artikelAt = now();
+      emit('change'); await persist();
+    })().finally(() => { articleRequest = null; });
+    return articleRequest;
+  }
+  async function refreshSuggestions(force = false) {
+    if (!online() || (!force && suggestionsAt !== null && now() - suggestionsAt < 60000)) return;
+    if (suggestionRequest) return suggestionRequest;
+    suggestionsAt = now();
+    suggestionRequest = (async () => {
+      vorschlaege = await api('/api/einkauf/vorschlaege' + (liste ? `?liste=${encodeURIComponent(liste)}` : ''));
+      suggestionsDirty = false;
+      emit('change'); await persist();
+    })().finally(() => { suggestionRequest = null; });
+    return suggestionRequest;
   }
   async function flushLaden() {
     if (!pendingLaden || !liste) return;
@@ -161,14 +184,23 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
         rejectBatch(batch.filter(op => results.some(r => r.op_id === op.op_id && r.ergebnis === 'abgelehnt')));
         const confirmed = new Set(results.map(r => r.op_id));
         ops = ops.filter(op => !confirmed.has(op.op_id));
+        const changed = seq !== answer.seq || results.some(result => result.ergebnis === 'ok');
         seq = answer.seq; liste = answer.liste; clock.observe(answer.hlc);
         if (!pendingLaden && answer.listen) ladenId = answer.listen.find(row => row.uuid === liste)?.laden_id ?? null;
         await flushLaden();
         lastSync = now(); fehler = null; retry = 0;
         rebuild(); await persist();
+        if (changed) suggestionsDirty = true;
         // A malformed response must not cause an endless immediate retry.
         if (batch.length && !batch.some(op => confirmed.has(op.op_id))) break;
       } while (ops.length && online());
+      const learnedChanged = suggestionsDirty;
+      if (suggestionsDirty) {
+        try { await refreshSuggestions(); } catch { /* Keep cached suggestions. */ }
+      }
+      // Purchases update last amounts on the server; refresh the article cache at most once a minute.
+      const articlesStale = learnedChanged && (!artikelAt || now() - artikelAt > 60000);
+      try { await refreshArticles(articlesStale); } catch { /* Keep cached articles. */ }
       if (!catalogLoaded || now() - catalogAt > 30000) await refreshCatalog();
     } catch (error) {
       fehler = error.message;
@@ -197,8 +229,12 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
         seq = saved?.seq || 0; liste = saved?.liste || null; nr = saved?.nr || 0; lastSync = saved?.lastSync || null;
         kategorien = saved?.kategorien || []; laeden = saved?.laeden || []; reihenfolgen = saved?.reihenfolgen || {};
         ladenId = saved?.ladenId ?? null; pendingLaden = saved?.pendingLaden || null;
+        artikel = saved?.artikel || []; artikelAt = saved?.artikelAt || 0;
+        vorschlaege = saved?.vorschlaege || vorschlaege; suggestionsAt = saved?.suggestionsAt ?? null;
+        suggestionsDirty = saved?.suggestionsDirty || false;
         initialized = true; rebuild(); await persist();
         if (online()) { try { await refreshCatalog(); } catch { /* Keep the cached catalog offline. */ } }
+        try { await refreshArticles(); } catch { /* Keep cached articles. */ }
         globalThis.window?.addEventListener('online', connection);
         globalThis.window?.addEventListener('offline', connection);
         globalThis.window?.addEventListener('focus', wake);
@@ -209,6 +245,32 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
       return initializing;
     },
     entries: () => sortedEntries(state),
+    artikel: () => structuredClone(artikel),
+    vorschlaege: () => structuredClone(vorschlaege),
+    refreshSuggestions, refreshArticles,
+    async hideSuggestion(name, tage = 7) {
+      await api('/api/einkauf/vorschlaege/ausblenden', { method:'POST', body:JSON.stringify({ name, tage }) });
+      await Promise.all([refreshArticles(true), refreshSuggestions(true)]);
+    },
+    async setPantry(name, vorrat) {
+      await api('/api/einkauf/artikel/vorrat', { method:'POST', body:JSON.stringify({ name, vorrat }) });
+      await refreshArticles(true);
+    },
+    async addPlannedRecipes() {
+      if (!online()) return;
+      for (const recipe of vorschlaege.wochenplan) {
+        const result = await api(`/api/rezepte/${Number(recipe.rezept_id)}/zu-einkaufsliste`, {
+          method:'POST', body:JSON.stringify({ portionen:recipe.portionen, liste }),
+        });
+        if (result.vorrat?.length && typeof document !== 'undefined') {
+          const { toastAction } = await import('./utils.js');
+          toastAction(`${result.vorrat.map(item => item.name).join(', ')} vermutlich zuhause`, 'Trotzdem hinzufügen', () => {
+            for (const item of result.vorrat) store.add(item.name, { menge_text:item.menge_text || null });
+          });
+        }
+      }
+      await sync(); await refreshSuggestions(true);
+    },
     kategorien: () => structuredClone(reihenfolgen[ladenId] || kategorien),
     laeden: () => structuredClone(laeden),
     ladenId: () => ladenId,
