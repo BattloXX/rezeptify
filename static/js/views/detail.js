@@ -1,3 +1,4 @@
+import { onAnyShoppingChange } from '../einkauf-store.js';
 import { api, apiFetch } from '../api.js';
 import { askImageUrl, toast, x, safeUrl, safeImageUrl, EM, optimisticToggle, scaleAmount, shareText, STAR_LABELS, renderDetailStars, renderCardStars, starLabel } from '../utils.js';
 import { S } from '../app.js';
@@ -320,6 +321,7 @@ async function addToShoppingList() {
     await api('/api/rezepte/' + S.current.id + '/zu-einkaufsliste', {
       method: 'POST', body: JSON.stringify({ portionen: portionState.current })
     });
+    onAnyShoppingChange();
     const old = btn.innerHTML;
     btn.innerHTML = '<span class="material-symbols-outlined">check</span> Hinzugefügt!';
     setTimeout(() => { if (btn) btn.innerHTML = old; }, 2500);

@@ -399,6 +399,7 @@
     <!-- ── EINKAUF view ──────────────────────────────────────────────── -->
     <section id="view-einkauf" class="view">
       <div class="shopping-header"><h2>Einkaufsliste</h2><button class="icon-pill" onclick="shareShopping()"><span class="material-symbols-outlined">share</span> Teilen</button></div>
+      <div id="einkauf-status" class="shopping-status" role="status"></div>
       <form id="einkauf-add" class="shopping-add"><input id="einkauf-name" class="fc" placeholder="Eintrag hinzufügen…" autocomplete="off"><button class="btn btn-accent" type="submit"><span class="material-symbols-outlined">add</span> Hinzufügen</button></form>
       <div class="shopping-section"><h3>Offen</h3><div id="einkauf-open"></div></div>
       <div class="shopping-section"><div class="shopping-done-head"><h3>Erledigt</h3><button id="einkauf-clean" class="btn btn-ghost" onclick="clearDone()" hidden>Erledigte löschen</button></div><div id="einkauf-done"></div></div>

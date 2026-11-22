@@ -58,6 +58,7 @@ export async function api(path, opts = {}) {
   try {
     return await request(path, opts);
   } catch (err) {
+    err.requestPath = path;
     window.dispatchEvent(new CustomEvent('api:error', { detail: err }));
     throw err;
   }

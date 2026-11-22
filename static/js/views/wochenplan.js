@@ -1,3 +1,4 @@
+import { onAnyShoppingChange } from '../einkauf-store.js';
 import { api } from '../api.js';
 import { toast, x, safeImageUrl } from '../utils.js';
 import { openDetail } from './detail.js';
@@ -79,6 +80,7 @@ export async function createWeekShopping() {
   try {
     const result = await api('/api/wochenplan/einkaufsliste', { method: 'POST', body: JSON.stringify({ von: iso(days[0]), bis: iso(days[6]) }) });
     toast(`${result.anzahl} Einträge zur Einkaufsliste hinzugefügt`, 'ok');
+    onAnyShoppingChange();
     window.showView('einkauf');
   } catch (e) { toast(e.message, 'err'); }
 }

@@ -57,6 +57,9 @@ def test_service_worker(client):
     assert "no-cache" in response.headers["Cache-Control"]
     assert f"rezeptify-{token}" in response.text
     assert "__ASSET_VERSION__" not in response.text
+    assert "__PRECACHE__" not in response.text
+    assert f"/static/js/views/einkauf.js?v={token}" in response.text
+    assert f"/static/js/einkauf-store.js?v={token}" in response.text
 
 
 def test_asset_version_is_public_with_auth_enabled(client, monkeypatch):
