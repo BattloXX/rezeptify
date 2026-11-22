@@ -62,6 +62,7 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
   storage = createStorage(), now = Date.now, toast = notify } = {}) {
   const events = new EventTarget();
   let initialized = false, initializing, server = new Map(), state = new Map(), aliases = new Map(), ops = [];
+  let kategorien = [], laeden = [], reihenfolgen = {}, ladenId = null, pendingLaden = null, catalogLoaded = false, catalogAt = 0;
   let clock, geraet, liste = null, seq = 0, nr = 0, lastSync = null, fehler = null;
   let timer, running, retry = 0, batchSize = 200, writes = Promise.resolve(), disposed = false;
   const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -69,7 +70,7 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
   function emit(type) { events.dispatchEvent(new Event(type)); }
   function persist() {
     const snapshot = { entries: [...server.values()], ops: structuredClone(ops), aliases: [...aliases],
-      seq, clock: clock.state(), geraet, liste, nr, lastSync };
+      seq, clock: clock.state(), geraet, liste, nr, lastSync, kategorien, laeden, reihenfolgen, ladenId, pendingLaden };
     writes = writes.then(() => storage.save(snapshot)).catch(() => toast('Offline-Speicher nicht verfügbar'));
     return writes;
   }
@@ -102,11 +103,37 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
     const ids = new Set(batch.map(op => op.op_id));
     ops = ops.filter(op => !ids.has(op.op_id));
   }
+  async function refreshCatalog() {
+    if (!online()) return;
+    const [cats, shops] = await Promise.all([api('/api/einkauf/kategorien'), api('/api/einkauf/laeden')]);
+    const orders = await Promise.all(shops.laeden.map(async shop => {
+      const result = await api(`/api/einkauf/kategorien?laden=${shop.id}`);
+      return [shop.id, result.kategorien];
+    }));
+    kategorien = cats.kategorien; laeden = shops.laeden; reihenfolgen = Object.fromEntries(orders);
+    catalogLoaded = true; catalogAt = now();
+    emit('change'); await persist();
+  }
+  async function flushLaden() {
+    if (!pendingLaden || !liste) return;
+    const pending = pendingLaden;
+    await writes;
+    try {
+      await api(`/api/einkauf/listen/${liste}`, { method: 'PATCH', body: JSON.stringify({ laden_id: pending.value }) });
+    } catch (error) {
+      if (error.status !== 404) throw error;
+      toast('Laden nicht mehr vorhanden');
+      if (pendingLaden === pending) ladenId = null;
+    }
+    if (pendingLaden === pending) pendingLaden = null;
+    await persist();
+  }
   async function run() {
     clearTimeout(timer);
     if (!initialized || !online()) { emit('status'); return; }
     let delay = pollDelay();
     try {
+      if (pendingLaden && liste) await flushLaden();
       do {
         const batch = ops.slice(0, batchSize);
         let answer;
@@ -135,11 +162,14 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
         const confirmed = new Set(results.map(r => r.op_id));
         ops = ops.filter(op => !confirmed.has(op.op_id));
         seq = answer.seq; liste = answer.liste; clock.observe(answer.hlc);
+        if (!pendingLaden && answer.listen) ladenId = answer.listen.find(row => row.uuid === liste)?.laden_id ?? null;
+        await flushLaden();
         lastSync = now(); fehler = null; retry = 0;
         rebuild(); await persist();
         // A malformed response must not cause an endless immediate retry.
         if (batch.length && !batch.some(op => confirmed.has(op.op_id))) break;
       } while (ops.length && online());
+      if (!catalogLoaded || now() - catalogAt > 30000) await refreshCatalog();
     } catch (error) {
       fehler = error.message;
       delay = Math.min(60000, 2000 * 2 ** Math.min(retry++, 5));
@@ -165,7 +195,10 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
         server = new Map((saved?.entries || []).map(row => [row.uuid, row]));
         aliases = new Map(saved?.aliases || []); ops = saved?.ops || [];
         seq = saved?.seq || 0; liste = saved?.liste || null; nr = saved?.nr || 0; lastSync = saved?.lastSync || null;
+        kategorien = saved?.kategorien || []; laeden = saved?.laeden || []; reihenfolgen = saved?.reihenfolgen || {};
+        ladenId = saved?.ladenId ?? null; pendingLaden = saved?.pendingLaden || null;
         initialized = true; rebuild(); await persist();
+        if (online()) { try { await refreshCatalog(); } catch { /* Keep the cached catalog offline. */ } }
         globalThis.window?.addEventListener('online', connection);
         globalThis.window?.addEventListener('offline', connection);
         globalThis.window?.addEventListener('focus', wake);
@@ -176,7 +209,31 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
       return initializing;
     },
     entries: () => sortedEntries(state),
-    status: () => ({ online: online(), pending: ops.length, lastSync, fehler }),
+    kategorien: () => structuredClone(reihenfolgen[ladenId] || kategorien),
+    laeden: () => structuredClone(laeden),
+    ladenId: () => ladenId,
+    setLaden(id) {
+      ladenId = id; pendingLaden = { value: id };
+      persist(); emit('change'); emit('status'); scheduleSync(0);
+    },
+    async saveLaden(id, values) {
+      await api('/api/einkauf/laeden' + (id == null ? '' : `/${id}`), {
+        method: id == null ? 'POST' : 'PATCH', body: JSON.stringify(values),
+      });
+      await refreshCatalog();
+    },
+    async deleteLaden(id) {
+      await api(`/api/einkauf/laeden/${id}`, { method: 'DELETE' });
+      if (ladenId === id) { ladenId = null; pendingLaden = null; }
+      await refreshCatalog();
+    },
+    async saveReihenfolge(id, ids) {
+      await api(`/api/einkauf/laeden/${id}/reihenfolge`, { method: 'PUT', body: JSON.stringify({ kategorien: ids }) });
+      await refreshCatalog();
+    },
+    kategorienFuer: id => structuredClone(reihenfolgen[id] || kategorien),
+    setKategorie: (id, kategorie_id) => enqueue('inhalt_setzen', id, { kategorie_id }),
+    status: () => ({ online: online(), pending: ops.length + (pendingLaden ? 1 : 0), lastSync, fehler }),
     isInitialized: () => initialized,
     sync, scheduleSync,
     add(name, { menge = null, einheit = null, menge_text = null, notiz = null, herkunft = [], manuell = true } = {}) {
@@ -190,7 +247,7 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
       const id = enqueue('anlegen', crypto.randomUUID(), {
         name: entry.name, menge: entry.menge, einheit: entry.einheit, menge_text: entry.menge_text,
         notiz: entry.notiz, herkunft: entry.herkunft || [], manuell: entry.manuell,
-        rang: entry.rang,
+        rang: entry.rang, kategorie_id: entry.kategorie_id ?? null,
       });
       if (entry.erledigt) store.setDone(id, true);
       return id;

@@ -985,3 +985,13 @@ textarea.fc { height: auto; padding: 10px 11px; resize: vertical; }
 .swipe-left .shopping-swipe-icon { display:block; right:16px; }
 .shopping-recipe-armed { color:#a32626; background:#ffe0de; }
 #btn-remove-shopping-recipe[hidden] { display:none; }
+
+.shopping-header { flex-wrap:wrap; }
+.shopping-shop { width:auto; max-width:180px; }
+.shopping-category h4 { display:flex; align-items:center; gap:8px; margin:16px 0 4px; color:var(--muted); }
+.shopping-category h4 small { margin-left:auto; }
+.shopping-order-row { display:flex; align-items:center; gap:4px; }
+.shopping-order-row > span { flex:1; }
+.shopping-drag-handle { touch-action:none; cursor:grab; color:var(--muted); user-select:none; }
+.shopping-drop-placeholder { border:2px dashed var(--accent); border-radius:var(--r-sm); }
+.shopping-drag-ghost { position:fixed; z-index:500; pointer-events:none; opacity:.85; box-shadow:0 4px 20px #0003; }

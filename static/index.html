@@ -398,7 +398,7 @@
 
     <!-- ── EINKAUF view ──────────────────────────────────────────────── -->
     <section id="view-einkauf" class="view">
-      <div class="shopping-header"><h2>Einkaufsliste</h2><button class="icon-pill" onclick="shareShopping()"><span class="material-symbols-outlined">share</span> Teilen</button></div>
+      <div class="shopping-header"><h2>Einkaufsliste</h2><select id="einkauf-laden" class="fc shopping-shop" aria-label="Laden"><option value="">Kein Laden</option></select><button id="einkauf-manage" class="icon-pill" type="button">Läden &amp; Reihenfolge</button><button class="icon-pill" onclick="shareShopping()"><span class="material-symbols-outlined">share</span> Teilen</button></div>
       <div id="einkauf-status" class="shopping-status" role="status"></div>
       <form id="einkauf-add" class="shopping-add"><input id="einkauf-name" class="fc" placeholder="Eintrag hinzufügen…" autocomplete="off"><button class="btn btn-accent" type="submit"><span class="material-symbols-outlined">add</span> Hinzufügen</button></form>
       <div id="einkauf-preview" class="shopping-preview" role="status" hidden></div>
@@ -477,10 +477,25 @@
       <div class="shopping-units"><button type="button" data-unit="Stk" aria-pressed="false">Stk</button><button type="button" data-unit="g" aria-pressed="false">g</button><button type="button" data-unit="kg" aria-pressed="false">kg</button><button type="button" data-unit="ml" aria-pressed="false">ml</button><button type="button" data-unit="l" aria-pressed="false">l</button><button type="button" data-unit="Pkg" aria-pressed="false">Pkg</button><button type="button" data-unit="Bund" aria-pressed="false">Bund</button><button type="button" data-unit="Dose" aria-pressed="false">Dose</button><button type="button" data-unit="Becher" aria-pressed="false">Becher</button><button type="button" data-unit="Flasche" aria-pressed="false">Flasche</button></div>
       <label>Einheit (frei eingeben)<input id="einkauf-edit-unit" class="fc" maxlength="32"></label>
       <label>Freitext-Menge (statt Zahl)<input id="einkauf-edit-text" class="fc" maxlength="64" placeholder="z. B. 2–3"></label>
+      <label>Kategorie<select id="einkauf-edit-category" class="fc"></select></label>
       <label>Notiz<input id="einkauf-edit-note" class="fc" maxlength="255"></label>
     </div>
     <div class="form-footer"><button type="button" class="btn btn-ghost" data-edit-delete>Löschen</button><button type="button" class="btn btn-ghost" data-edit-cancel>Abbrechen</button><button class="btn btn-accent" type="submit">Speichern</button></div>
   </form>
+</div>
+
+<div id="ov-einkauf-laeden" class="overlay">
+  <div class="modal plan-modal" role="dialog" aria-modal="true" aria-labelledby="einkauf-laeden-title">
+    <div class="form-header"><span id="einkauf-laeden-title" class="form-header-title">Läden &amp; Reihenfolge</span><button type="button" class="form-header-close" data-shops-close aria-label="Schließen">×</button></div>
+    <div class="plan-modal-body shopping-edit-body">
+      <form id="einkauf-shop-new" class="shopping-add"><input id="einkauf-shop-name" class="fc" maxlength="80" required placeholder="Neuer Laden" aria-label="Neuer Laden"><button class="btn btn-accent" type="submit">Anlegen</button></form>
+      <label>Laden verwalten<select id="einkauf-shop-edit" class="fc"></select></label>
+      <form id="einkauf-shop-form"><label>Name<input id="einkauf-shop-rename" class="fc" required maxlength="80"></label><label><input id="einkauf-shop-active" type="checkbox"> Aktiv</label><label><input id="einkauf-shop-default" type="checkbox"> Standard</label><button class="btn btn-ghost" type="submit">Speichern</button><button id="einkauf-shop-delete" class="btn btn-ghost" type="button">Löschen</button></form>
+      <p>Kategorien mit ↑ und ↓ ordnen.</p><div id="einkauf-shop-order"></div>
+      <button id="einkauf-shop-save-order" class="btn btn-accent" type="button">Reihenfolge speichern</button>
+      <p id="einkauf-shop-message" role="status"></p>
+    </div>
+  </div>
 </div>
 
 <div id="ov-planen" class="overlay" onclick="overlayClick(event,'ov-planen')">

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth import require_auth
 from db import get_db, parse_json_field
 from services.einkauf_sync import (
-    ListeNichtGefunden, _entry, aenderungen_seit, apply_ops, parse_hlc, rang_zwischen,
+    ListeNichtGefunden, _entry, aenderungen_seit, apply_ops, parse_hlc, rang_initial, rang_zwischen,
     server_hlc, server_op, standard_liste,
 )
 from services.shopping_service import merge_or_add, zutaten_fuer_einkauf
@@ -26,7 +26,7 @@ def _serialize(row):
 
 
 def _listen(cur):
-    cur.execute("SELECT uuid, name, ist_standard FROM einkaufslisten WHERE archiviert=0 ORDER BY erstellt_am, uuid")
+    cur.execute("SELECT uuid, name, ist_standard, laden_id FROM einkaufslisten WHERE archiviert=0 ORDER BY erstellt_am, uuid")
     return [{**row, "ist_standard": bool(row["ist_standard"])} for row in cur.fetchall()]
 
 
@@ -238,7 +238,7 @@ def add_uuid_eintraege(body: dict):
         if "eintraege" in body or not isinstance(text, str) or not text.strip() or len(text) > 2000:
             raise HTTPException(400, "Text oder Einträge erforderlich, Text maximal 2000 Zeichen")
         entries = [parse_eintrag(part) for part in split_mehrfach(text)]
-    allowed = {"name", "menge", "einheit", "menge_text", "notiz"}
+    allowed = {"name", "menge", "einheit", "menge_text", "notiz", "kategorie_id"}
     if not isinstance(entries, list) or not 1 <= len(entries) <= 100:
         raise HTTPException(400, "1 bis 100 Einträge erforderlich")
     if any(not isinstance(entry, dict) or set(entry) - allowed for entry in entries):
@@ -260,14 +260,14 @@ def add_uuid_eintraege(body: dict):
 
 @router.patch("/api/einkauf/eintraege/{ident}")
 def update_uuid_eintrag(ident: str, body: dict):
-    allowed = {"name", "notiz", "menge", "einheit", "menge_text", "erledigt"}
+    allowed = {"name", "notiz", "menge", "einheit", "menge_text", "erledigt", "kategorie_id"}
     if not body or set(body) - allowed:
         raise HTTPException(400, "Ungültige Eintragsdaten")
     with get_db() as conn:
         with conn.cursor() as cur:
             liste, row = _uuid_existing(cur, ident)
             ops = []
-            content = {key: body[key] for key in ("name", "notiz") if key in body}
+            content = {key: body[key] for key in ("name", "notiz", "kategorie_id") if key in body}
             if content:
                 ops.append(server_op("inhalt_setzen", row["uuid"], content))
             if any(key in body for key in ("menge", "einheit", "menge_text")):
@@ -300,3 +300,136 @@ def clear_uuid_erledigte(body: dict):
             for start in range(0, len(entries), 500):
                 _uuid_apply(cur, liste, [server_op("erledigte_loeschen", None, {"eintraege": entries[start:start + 500]})])
             return {"geloescht": len(entries)}
+
+
+@router.get("/api/einkauf/kategorien")
+def get_kategorien(laden: int | None = None):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT k.id,k.name,k.icon,k.standard_rang,k.aktiv,
+                COALESCE(r.rang,k.standard_rang) AS rang FROM einkauf_kategorien k
+                LEFT JOIN laden_kategorie_rang r ON r.kategorie_id=k.id AND r.laden_id=%s
+                WHERE k.aktiv=1 ORDER BY BINARY COALESCE(r.rang,k.standard_rang),k.id""", (laden,))
+            return {"kategorien": list(cur.fetchall())}
+
+
+def _laeden(cur):
+    cur.execute("SELECT id,name,aktiv,standard FROM laeden ORDER BY name,id")
+    return [{**row, "aktiv": bool(row["aktiv"]), "standard": bool(row["standard"])} for row in cur.fetchall()]
+
+
+@router.get("/api/einkauf/laeden")
+def get_laeden():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            return {"laeden": _laeden(cur)}
+
+
+def _laden_daten(body, neu=False):
+    if not body or set(body) - {"name", "aktiv", "standard"} or (neu and "name" not in body):
+        raise HTTPException(400, "Ungültige Ladendaten")
+    values = dict(body)
+    if "name" in values:
+        if not isinstance(values["name"], str) or not values["name"].strip() or len(values["name"].strip()) > 80:
+            raise HTTPException(400, "Name muss 1 bis 80 Zeichen haben")
+        values["name"] = values["name"].strip()
+    for key in ("aktiv", "standard"):
+        if key in values and type(values[key]) is not bool:
+            raise HTTPException(400, "Ungültige Ladendaten")
+    return values
+
+
+def _laden(cur, ident):
+    cur.execute("SELECT id FROM laeden WHERE id=%s FOR UPDATE", (ident,))
+    if not cur.fetchone():
+        raise HTTPException(404, "Laden nicht gefunden")
+
+
+def _laden_name_frei(cur, name, ident=0):
+    cur.execute("SELECT id FROM laeden WHERE name=%s AND id<>%s", (name, ident))
+    if cur.fetchone():
+        raise HTTPException(409, "Ladenname bereits vorhanden")
+
+
+@router.post("/api/einkauf/laeden", status_code=201)
+def create_laden(body: dict):
+    values = _laden_daten(body, neu=True)
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            _laden_name_frei(cur, values["name"])
+            if values.get("standard"):
+                cur.execute("UPDATE laeden SET standard=0")
+            cur.execute("INSERT INTO laeden (name,aktiv,standard) VALUES (%s,%s,%s)",
+                        (values["name"], values.get("aktiv", True), values.get("standard", False)))
+            ident = cur.lastrowid
+            return next(row for row in _laeden(cur) if row["id"] == ident)
+
+
+@router.patch("/api/einkauf/laeden/{ident}")
+def update_laden(ident: int, body: dict):
+    values = _laden_daten(body)
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            _laden(cur, ident)
+            if "name" in values:
+                _laden_name_frei(cur, values["name"], ident)
+            if values.get("standard"):
+                cur.execute("UPDATE laeden SET standard=0")
+            cur.execute("UPDATE laeden SET " + ",".join(key + "=%s" for key in values) + " WHERE id=%s",
+                        (*values.values(), ident))
+            return next(row for row in _laeden(cur) if row["id"] == ident)
+
+
+@router.delete("/api/einkauf/laeden/{ident}")
+def delete_laden(ident: int):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            _laden(cur, ident)
+            cur.execute("UPDATE einkaufslisten SET laden_id=NULL WHERE laden_id=%s", (ident,))
+            cur.execute("DELETE FROM laden_kategorie_rang WHERE laden_id=%s", (ident,))
+            cur.execute("DELETE FROM laeden WHERE id=%s", (ident,))
+    return {"ok": True}
+
+
+@router.put("/api/einkauf/laeden/{ident}/reihenfolge")
+def set_reihenfolge(ident: int, body: dict):
+    ids = body.get("kategorien")
+    if set(body) != {"kategorien"} or not isinstance(ids, list) or any(type(i) is not int for i in ids) or len(ids) != len(set(ids)):
+        raise HTTPException(400, "Ungültige Kategorien")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            _laden(cur, ident)
+            cur.execute("SELECT id FROM einkauf_kategorien WHERE aktiv=1")
+            if set(ids) != {row["id"] for row in cur.fetchall()}:
+                raise HTTPException(400, "Alle aktiven Kategorien erforderlich")
+            cur.execute("DELETE FROM laden_kategorie_rang WHERE laden_id=%s", (ident,))
+            cur.executemany("INSERT INTO laden_kategorie_rang (laden_id,kategorie_id,rang) VALUES (%s,%s,%s)",
+                            [(ident, cat, rang_initial(i)) for i, cat in enumerate(ids)])
+    return {"ok": True}
+
+
+@router.patch("/api/einkauf/listen/{ident}")
+def set_listen_laden(ident: str, body: dict):
+    laden = body.get("laden_id")
+    if set(body) != {"laden_id"} or (laden is not None and (type(laden) is not int or laden <= 0)):
+        raise HTTPException(400, "Ungültiger Laden")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            _uuid_liste(cur, ident)
+            if laden is not None:
+                _laden(cur, laden)
+            cur.execute("UPDATE einkaufslisten SET laden_id=%s WHERE uuid=%s", (laden, ident))
+            return next(row for row in _listen(cur) if row["uuid"] == ident)
+
+
+@router.get("/api/einkauf/artikel")
+def get_artikel(q: str = "", limit: int = 20):
+    if not 1 <= limit <= 100 or len(q) > 255:
+        raise HTTPException(400, "Ungültige Suche")
+    pattern = q.strip().replace("!", "!!").replace("%", "!%").replace("_", "!_")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT name_norm,anzeigename,kategorie_id,letzte_menge,letzte_einheit,vorrat
+                FROM einkauf_artikel WHERE ausgeblendet=0 AND anzeigename LIKE %s ESCAPE '!'
+                ORDER BY anzahl_gekauft DESC,zuletzt_gekauft DESC,anzeigename LIMIT %s""", ('%' + pattern + '%', limit))
+            return {"artikel": list(cur.fetchall())}

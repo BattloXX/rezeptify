@@ -58,6 +58,11 @@ def client():
                 cur.execute("DELETE FROM einkauf_ops")
                 cur.execute("DELETE FROM einkauf_aliase")
                 cur.execute("DELETE FROM einkaufslisten")
+                cur.execute("DELETE FROM laden_kategorie_rang")
+                cur.execute("DELETE FROM laeden")
+                cur.execute("DELETE FROM einkauf_artikel")
+                from services.einkauf_woerterbuch import seed
+                seed(cur)
                 cur.execute("DELETE FROM wochenplan")
                 cur.execute("DELETE FROM kochhistorie")
                 cur.execute("DELETE FROM error_log")

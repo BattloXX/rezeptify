@@ -1,12 +1,12 @@
 import store from '../einkauf-store.js';
-import { formatAmount, unitMultiplier } from '../einkauf-core.js';
+import { formatAmount, unitMultiplier, groupByKategorie } from '../einkauf-core.js';
 import { parseEintrag, splitMehrfach } from '../mengen-parser.js';
 import { toast, toastAction, x, shareText } from '../utils.js';
 import { openDetail } from './detail.js';
 
 let entries = [];
 let armedRecipe = null, recipeTimer, editing, previousFocus;
-let suppressClick = false;
+let suppressClick = false, dragging = false;
 
 export function initEinkauf() {
   document.getElementById('einkauf-add')?.addEventListener('submit', addEntry);
@@ -36,6 +36,7 @@ export function initEinkauf() {
       recognition.start();
     });
   }
+  initShops();
   const overlay = document.getElementById('ov-einkauf-edit');
   overlay?.addEventListener('click', event => {
     if (event.target === overlay || event.target.closest('[data-edit-cancel]')) closeEdit();
@@ -46,7 +47,7 @@ export function initEinkauf() {
   overlay?.addEventListener('keydown', event => {
     if (event.key === 'Escape') { event.stopPropagation(); closeEdit(); }
     if (event.key === 'Tab') {
-      const controls = [...overlay.querySelectorAll('button,input')].filter(el => !el.disabled);
+      const controls = [...overlay.querySelectorAll('button,input,select')].filter(el => !el.disabled);
       const first = controls[0], last = controls.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
@@ -99,6 +100,7 @@ function originTags(entry) {
 function rows(list) {
   if (!list.length) return '<p class="shopping-empty">Keine Einträge</p>';
   return list.map(e => `<div class="shopping-swipe"><span class="shopping-swipe-icon material-symbols-outlined" aria-hidden="true"></span><div class="shopping-row ${e.erledigt ? 'done' : ''}" data-id="${x(e.uuid)}">
+    ${!e.erledigt ? '<span class="shopping-drag-handle material-symbols-outlined" title="Zum Verschieben gedrückt halten" aria-hidden="true">drag_indicator</span>' : ''}
     <button class="shopping-check" aria-label="${e.erledigt ? 'Wieder öffnen' : 'Abhaken'}" data-toggle="${x(e.uuid)}"><span class="material-symbols-outlined">${e.erledigt ? 'check_box' : 'check_box_outline_blank'}</span></button>
     <div class="shopping-main"><button class="shopping-text" data-edit="${x(e.uuid)}"><strong>${x(amount(e))}</strong>${e.notiz ? `<small>${x(e.notiz)}</small>` : ''}</button><div class="shopping-origins">${originTags(e)}</div></div>
     ${!e.erledigt && !e.menge_text ? `<div class="shopping-stepper"><button data-plus="${x(e.uuid)}" data-delta="${-step(e)}" aria-label="Menge verringern" ${(e.menge ?? (e.einheit ? 0 : 1)) <= step(e) ? 'disabled' : ''}>−</button><button data-plus="${x(e.uuid)}" data-delta="${step(e)}" aria-label="Menge erhöhen">+</button></div>` : ''}
@@ -107,10 +109,17 @@ function rows(list) {
 }
 
 function render() {
+  if (dragging) return;
   entries = store.entries();
   renderStatus();
   const open = entries.filter(e => !e.erledigt), done = entries.filter(e => e.erledigt);
-  document.getElementById('einkauf-open').innerHTML = rows(open);
+  document.getElementById('einkauf-open').innerHTML = groupByKategorie(open, store.kategorien()).map(group =>
+    `<section class="shopping-category" data-category="${group.id == null ? '' : Number(group.id)}"><h4><span class="material-symbols-outlined">${x(group.icon)}</span>${x(group.name)} <small>${group.entries.length}</small></h4><div class="shopping-category-rows">${rows(group.entries)}</div></section>`).join('') || rows([]);
+  const select = document.getElementById('einkauf-laden');
+  if (select) {
+    select.innerHTML = '<option value="">Kein Laden</option>' + store.laeden().filter(shop => shop.aktiv || shop.id === store.ladenId()).map(shop => `<option value="${Number(shop.id)}">${x(shop.name)}</option>`).join('');
+    select.value = store.ladenId() ?? '';
+  }
   document.getElementById('einkauf-done').innerHTML = rows(done);
   document.getElementById('einkauf-clean').hidden = !done.length;
 }
@@ -217,6 +226,11 @@ function openEdit(id) {
   previousFocus = document.activeElement;
   for (const [field, value] of Object.entries({ name:editing.name, amount:editing.menge == null ? null : String(editing.menge).replace('.', ','), unit:editing.einheit, text:editing.menge_text, note:editing.notiz }))
     document.getElementById(`einkauf-edit-${field}`).value = value ?? '';
+  const categories = document.getElementById('einkauf-edit-category');
+  if (categories) {
+    categories.innerHTML = '<option value="">Keine Kategorie</option>' + store.kategorien().map(cat => `<option value="${Number(cat.id)}">${x(cat.name)}</option>`).join('');
+    categories.value = editing.kategorie_id ?? '';
+  }
   updateUnitChips();
   document.getElementById('ov-einkauf-edit').classList.add('on');
   document.getElementById('einkauf-edit-name').focus();
@@ -245,7 +259,10 @@ function saveEdit(event) {
     toast('Name und gültige Menge eingeben', 'err'); return;
   }
   try {
+    const category = document.getElementById('einkauf-edit-category');
+    const categoryId = category?.value ? Number(category.value) : null;
     if (name !== editing.name) store.rename(editing.uuid, name);
+    if (category && categoryId !== (editing.kategorie_id ?? null)) store.setKategorie(editing.uuid, categoryId);
     if (notiz !== editing.notiz) store.setNote(editing.uuid, notiz);
     if (menge !== editing.menge || einheit !== editing.einheit || menge_text !== editing.menge_text)
       store.setAmount(editing.uuid, menge, einheit, menge_text);
@@ -253,10 +270,102 @@ function saveEdit(event) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+function initShops() {
+  const overlay = document.getElementById('ov-einkauf-laeden');
+  if (!overlay) return;
+  const select = document.getElementById('einkauf-shop-edit');
+  const message = document.getElementById('einkauf-shop-message');
+  let order = [], busy = false, focusBefore;
+  const selected = () => store.laeden().find(shop => shop.id === Number(select.value));
+  function renderOrder(focusIndex = null, direction = null) {
+    document.getElementById('einkauf-shop-order').innerHTML = order.map((cat, i) =>
+      `<div class="shopping-order-row"><span>${x(cat.name)}</span><button type="button" class="btn btn-ghost" data-order="${i}" data-direction="-1" aria-label="${x(cat.name)} nach oben" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="btn btn-ghost" data-order="${i}" data-direction="1" aria-label="${x(cat.name)} nach unten" ${i === order.length - 1 ? 'disabled' : ''}>↓</button></div>`).join('');
+    if (focusIndex !== null) overlay.querySelector(`[data-order="${focusIndex}"][data-direction="${direction}"]`)?.focus();
+  }
+  function loadShop() {
+    const shop = selected();
+    document.getElementById('einkauf-shop-form').hidden = !shop;
+    document.getElementById('einkauf-shop-save-order').disabled = !shop;
+    document.getElementById('einkauf-shop-rename').value = shop?.name || '';
+    document.getElementById('einkauf-shop-active').checked = !!shop?.aktiv;
+    document.getElementById('einkauf-shop-default').checked = !!shop?.standard;
+    order = shop ? store.kategorienFuer(shop.id) : [];
+    renderOrder();
+  }
+  function populate(id = Number(select.value)) {
+    select.innerHTML = store.laeden().map(shop => `<option value="${Number(shop.id)}">${x(shop.name)}</option>`).join('');
+    if (store.laeden().some(shop => shop.id === id)) select.value = id;
+    loadShop();
+  }
+  async function action(fn) {
+    if (busy) return;
+    if (!store.status().online) { message.textContent = 'Läden verwalten ist online möglich.'; return; }
+    busy = true; message.textContent = 'Speichert …';
+    try { await fn(); populate(); message.textContent = 'Gespeichert'; }
+    catch (error) { message.textContent = error.message; }
+    finally { busy = false; }
+  }
+  function close() { overlay.classList.remove('on'); focusBefore?.focus(); }
+  document.getElementById('einkauf-laden')?.addEventListener('change', event => store.setLaden(event.target.value ? Number(event.target.value) : null));
+  document.getElementById('einkauf-manage')?.addEventListener('click', () => {
+    focusBefore = document.activeElement;
+    populate(store.ladenId()); message.textContent = '';
+    overlay.classList.add('on'); select.focus();
+  });
+  select.addEventListener('change', loadShop);
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay || event.target.closest('[data-shops-close]')) close();
+    const button = event.target.closest('[data-order]');
+    if (button && !busy) {
+      const from = Number(button.dataset.order), to = from + Number(button.dataset.direction);
+      if (to >= 0 && to < order.length) {
+        [order[from], order[to]] = [order[to], order[from]];
+        renderOrder(to, button.dataset.direction);
+      }
+    }
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.stopPropagation(); close(); }
+    if (event.key === 'Tab') {
+      const controls = [...overlay.querySelectorAll('button,input,select')].filter(el => !el.disabled && !el.closest('[hidden]'));
+      if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1).focus(); }
+      else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0].focus(); }
+    }
+  });
+  document.getElementById('einkauf-shop-new').addEventListener('submit', event => {
+    event.preventDefault();
+    action(async () => {
+      await store.saveLaden(null, { name: document.getElementById('einkauf-shop-name').value });
+      document.getElementById('einkauf-shop-name').value = '';
+    });
+  });
+  document.getElementById('einkauf-shop-form').addEventListener('submit', event => {
+    event.preventDefault();
+    if (selected()) action(() => store.saveLaden(selected().id, {
+      name: document.getElementById('einkauf-shop-rename').value,
+      aktiv: document.getElementById('einkauf-shop-active').checked,
+      standard: document.getElementById('einkauf-shop-default').checked,
+    }));
+  });
+  document.getElementById('einkauf-shop-delete').addEventListener('click', () => {
+    if (selected()) action(() => store.deleteLaden(selected().id));
+  });
+  document.getElementById('einkauf-shop-save-order').addEventListener('click', () => {
+    if (selected()) action(() => store.saveReihenfolge(selected().id, order.map(cat => cat.id)));
+  });
+}
+
 function initSwipe(container) {
   if (!container) return;
-  let gesture;
+  let gesture, holdTimer, drag;
   const reset = () => {
+    clearTimeout(holdTimer);
+    if (drag) {
+      cancelAnimationFrame(drag.frame);
+      drag.placeholder.remove(); drag.ghost.remove();
+      drag.wrapper.style.display = ''; drag = null; dragging = false;
+      render();
+    }
     if (gesture) {
       gesture.row.style.transform = '';
       gesture.row.classList.remove('swiping');
@@ -267,11 +376,38 @@ function initSwipe(container) {
   container.addEventListener('pointerdown', event => {
     if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
     const row = event.target.closest('.shopping-row');
-    if (row) gesture = { row, id:event.pointerId, x:event.clientX, y:event.clientY, dx:0, active:false };
+    if (row) {
+      gesture = { row, id:event.pointerId, x:event.clientX, y:event.clientY, dx:0, active:false };
+      if (entries.find(entry => entry.uuid === row.dataset.id)?.erledigt === false) holdTimer = setTimeout(() => {
+        if (!gesture || gesture.active) return;
+        const wrapper = row.parentElement, rect = wrapper.getBoundingClientRect();
+        const placeholder = document.createElement('div'), ghost = wrapper.cloneNode(true);
+        placeholder.className = 'shopping-drop-placeholder'; placeholder.style.height = `${rect.height}px`;
+        wrapper.before(placeholder); wrapper.style.display = 'none';
+        ghost.classList.add('shopping-drag-ghost');
+        Object.assign(ghost.style, { width:`${rect.width}px`, left:`${rect.left}px`, top:`${rect.top}px` });
+        document.body.append(ghost);
+        dragging = true;
+        drag = { wrapper, placeholder, ghost, y:event.clientY, x:event.clientX, offset:event.clientY - rect.top, frame:null, valid:false };
+        row.setPointerCapture(event.pointerId);
+        const tick = () => {
+          if (!drag) return;
+          const speed = drag.y < 75 ? -12 : drag.y > window.innerHeight - 75 ? 12 : 0;
+          if (speed) window.scrollBy(0, speed);
+          placeDrag(); drag.frame = requestAnimationFrame(tick);
+        };
+        drag.frame = requestAnimationFrame(tick);
+      }, 350);
+    }
   });
   container.addEventListener('pointermove', event => {
     if (!gesture || gesture.id !== event.pointerId) return;
+    if (drag) {
+      event.preventDefault(); drag.x = event.clientX; drag.y = event.clientY;
+      drag.ghost.style.top = `${drag.y - drag.offset}px`; placeDrag(); return;
+    }
     const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) clearTimeout(holdTimer);
     if (!gesture.active && Math.abs(dy) > 10 && Math.abs(dy) >= Math.abs(dx)) { reset(); return; }
     if (!gesture.active && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
       gesture.active = true; gesture.row.setPointerCapture(event.pointerId);
@@ -286,6 +422,24 @@ function initSwipe(container) {
   });
   container.addEventListener('pointerup', event => {
     if (!gesture || gesture.id !== event.pointerId) return;
+    if (drag) {
+      const id = gesture.row.dataset.id, category = drag.placeholder.closest('[data-category]');
+      const siblings = [...drag.placeholder.parentElement.children].filter(el => el !== drag.wrapper);
+      const index = siblings.indexOf(drag.placeholder);
+      const before = siblings.slice(0, index).at(-1)?.querySelector('.shopping-row')?.dataset.id;
+      const after = siblings.slice(index + 1)[0]?.querySelector('.shopping-row')?.dataset.id;
+      const categoryId = category?.dataset.category ? Number(category.dataset.category) : null;
+      const valid = drag.valid;
+      suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
+      reset();
+      if (valid) {
+        try {
+          store.move(id, before, after);
+          if (entries.find(entry => entry.uuid === id)?.kategorie_id !== categoryId) store.setKategorie(id, categoryId);
+        } catch (error) { toast(error.message, 'err'); }
+      }
+      return;
+    }
     const { row, dx, active } = gesture;
     const trigger = active && Math.abs(dx) > row.getBoundingClientRect().width * 0.35;
     if (active) {
@@ -295,6 +449,16 @@ function initSwipe(container) {
     reset();
     if (trigger) { if (dx > 0) toggle(row.dataset.id); else remove(row.dataset.id); }
   });
+  function placeDrag() {
+    const hit = document.elementFromPoint(drag.x, drag.y);
+    const category = hit?.closest('#einkauf-open [data-category]');
+    drag.valid = !!category;
+    if (!category) return;
+    const target = category.querySelector('.shopping-category-rows');
+    const next = [...target.children].find(el => el !== drag.wrapper && el !== drag.placeholder &&
+      drag.y < el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2);
+    target.insertBefore(drag.placeholder, next || null);
+  }
   container.addEventListener('pointercancel', reset);
   container.addEventListener('lostpointercapture', reset);
 }

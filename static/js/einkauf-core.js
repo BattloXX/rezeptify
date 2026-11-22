@@ -119,7 +119,7 @@ function number(value, nullable = false) {
   if (!Number.isFinite(value) || Math.abs(value) > 9999999.999) fail('menge_bereich');
 }
 const FIELDS = {
-  anlegen: [['name', 'menge', 'einheit', 'menge_text', 'notiz', 'rang', 'herkunft', 'manuell'], ['name']],
+  anlegen: [['name', 'menge', 'einheit', 'menge_text', 'notiz', 'rang', 'herkunft', 'manuell', 'kategorie_id'], ['name']],
   inhalt_setzen: [['name', 'notiz', 'kategorie_id'], []],
   menge_setzen: [['menge', 'einheit', 'menge_text'], ['menge', 'einheit', 'menge_text']],
   herkunft_entfernen: [['rezept_id'], ['rezept_id']],
@@ -310,4 +310,21 @@ export function formatAmount(entry) {
   }
   const amount = entry.menge_text || (value == null ? null : String(Number(value.toFixed(6))).replace('.', ','));
   return [amount, unit, entry.name].filter(v => v !== null && v !== undefined && v !== '').join(' ');
+}
+
+
+export function groupByKategorie(entries, kategorienSortiert) {
+  const groups = kategorienSortiert.map(category => ({ ...category, entries: [] }));
+  const byId = new Map(groups.map(group => [group.id, group]));
+  let fallback = groups.find(group => group.name === 'Sonstiges');
+  for (const entry of sortedEntries(new Map(entries.map(row => [row.uuid, row])))) {
+    if (entry.erledigt) continue;
+    let group = byId.get(entry.kategorie_id);
+    if (!group) {
+      if (!fallback) { fallback = { id: null, name: 'Sonstiges', icon: 'category', entries: [] }; groups.push(fallback); }
+      group = fallback;
+    }
+    group.entries.push(entry);
+  }
+  return groups.filter(group => group.entries.length);
 }

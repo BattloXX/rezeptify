@@ -178,7 +178,7 @@ def _validate(op):
     if ms > int(time.time() * 1000) + 86400000:
         raise ValueError("hlc_zukunft")
     fields = {
-        "anlegen": ({"name", "menge", "einheit", "menge_text", "notiz", "rang", "herkunft", "manuell"}, {"name"}),
+        "anlegen": ({"name", "menge", "einheit", "menge_text", "notiz", "rang", "herkunft", "manuell", "kategorie_id"}, {"name"}),
         "inhalt_setzen": ({"name", "notiz", "kategorie_id"}, set()),
         "menge_setzen": ({"menge", "einheit", "menge_text"}, {"menge", "einheit", "menge_text"}),
         "menge_plus": ({"menge", "einheit"}, {"menge"}),
@@ -306,6 +306,10 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
             _validate(op)
             typ, hlc, data = op["typ"], op["hlc"], op["daten"]
             removed_delta = None
+            if "kategorie_id" in data and data["kategorie_id"] is not None:
+                cur.execute("SELECT id FROM einkauf_kategorien WHERE id=%s AND aktiv=1", (data["kategorie_id"],))
+                if not cur.fetchone():
+                    raise ValueError("kategorie_nicht_gefunden")
             if typ == "erledigte_loeschen":
                 # Resolve and check every list before making changes.
                 entries = [(_entry(cur, item["uuid"], liste_uuid), item["hlc_status"]) for item in data["eintraege"]]
@@ -353,14 +357,16 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
                             cur.execute("SELECT rang FROM einkaufsliste_eintraege WHERE liste_uuid=%s AND rang IS NOT NULL ORDER BY BINARY rang DESC LIMIT 1 FOR UPDATE", (liste_uuid,))
                             last = cur.fetchone()
                             rank = rang_nach(last["rang"] if last else None)
+                        from services.einkauf_woerterbuch import kategorie_fuer
+                        category = data.get("kategorie_id") if "kategorie_id" in data else kategorie_fuer(cur, data["name"])
                         seq += 1
                         cur.execute("""INSERT INTO einkaufsliste_eintraege
-                            (uuid,liste_uuid,name,name_norm,menge,einheit,menge_text,notiz,manuell,herkunft,rang,
+                            (uuid,liste_uuid,name,name_norm,menge,einheit,menge_text,notiz,manuell,herkunft,rang,kategorie_id,
                              hlc_inhalt,hlc_menge,hlc_status,hlc_position,hlc_geloescht,seq)
-                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                                     (ident, liste_uuid, data["name"].strip(), normalize_name(data["name"]), data.get("menge"),
                                      data.get("einheit"), data.get("menge_text"), data.get("notiz"), data.get("manuell", False),
-                                     json.dumps(data.get("herkunft", [])), rank, hlc, hlc, hlc, hlc, hlc, seq))
+                                     json.dumps(data.get("herkunft", [])), rank, category, hlc, hlc, hlc, hlc, hlc, seq))
                     result["ergebnis"] = "ok"
                 elif not row:
                     raise ValueError("eintrag_nicht_gefunden")
@@ -436,6 +442,13 @@ def apply_ops(cur, liste_uuid, ops, geraet_hlc_seen=None):
                                     values["einheit"] = data["einheit"] or None
                         values[field] = hlc
                         update(ident, values)
+                        if typ == "inhalt_setzen" and "kategorie_id" in data:
+                            name = values.get("name", row["name"])
+                            cur.execute("""INSERT INTO einkauf_artikel
+                                (name_norm,anzeigename,kategorie_id,quelle,geaendert_seq) VALUES (%s,%s,%s,'gelernt',%s)
+                                ON DUPLICATE KEY UPDATE anzeigename=VALUES(anzeigename),
+                                kategorie_id=VALUES(kategorie_id),quelle='gelernt',geaendert_seq=VALUES(geaendert_seq)""",
+                                        (normalize_name(name), name, data["kategorie_id"], seq))
                         result["ergebnis"] = "ok"
         except (ValueError, TypeError, KeyError, AttributeError) as exc:
             cur.execute("ROLLBACK TO SAVEPOINT einkauf_op")

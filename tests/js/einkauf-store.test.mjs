@@ -29,6 +29,8 @@ async function setup(t, handler, saved = null) {
     storage: { load: async () => snapshot, save: async data => { snapshot = structuredClone(data); } },
     toast: msg => messages.push(msg),
     api: async (path, opts) => {
+      if (path === '/api/einkauf/kategorien') return { kategorien: [] };
+      if (path === '/api/einkauf/laeden') return { laeden: [] };
       assert.equal(path, '/api/einkauf/sync');
       const request = JSON.parse(opts.body);
       calls.push(request);
@@ -196,4 +198,45 @@ test('removeRecipe queues one operation per matching entry, including done entri
   assert.deepEqual(store.entries().map(e => e.name), ['Salz']);
   await store.dispose();
   assert.equal(snapshot().ops.filter(op => op.typ === 'herkunft_entfernen').length, 2);
+});
+
+
+test('catalog and shop choice survive offline reload and retry a failed PATCH', async t => {
+  const cached = {
+    kategorien: [{ id:1, name:'Obst', rang:'A' }],
+    laeden: [{ id:4, name:'Markt', aktiv:true }],
+    reihenfolgen: { 4:[{ id:1, name:'Obst', rang:'B' }] }, liste:'standard',
+  };
+  const first = await setup(t, undefined, cached);
+  first.store.setLaden(4);
+  await first.store.dispose();
+  let snapshot = first.snapshot(), attempts = 0;
+  const paths = [];
+  const store = createStore({ now:() => now, toast:() => {},
+    storage:{ load:async () => snapshot, save:async data => { snapshot = structuredClone(data); } },
+    api:async (path, opts) => {
+      paths.push(path);
+      if (path === '/api/einkauf/listen/standard') {
+        assert.deepEqual(JSON.parse(opts.body), { laden_id:4 });
+        if (++attempts === 1) throw new Error('offline');
+        return {};
+      }
+      if (path === '/api/einkauf/kategorien') return { kategorien:cached.kategorien };
+      if (path === '/api/einkauf/laeden') return { laeden:cached.laeden };
+      if (path.includes('?laden=')) return { kategorien:cached.reihenfolgen[4] };
+      return answer(JSON.parse(opts.body), [], { listen:[{ uuid:'standard', laden_id:4 }] });
+    },
+  });
+  await store.init();
+  assert.equal(store.ladenId(), 4);
+  assert.equal(store.kategorien()[0].rang, 'B');
+  first.connect();
+  await store.sync();
+  assert.equal(store.status().pending, 1);
+  await store.sync();
+  assert.equal(store.status().pending, 0);
+  assert.equal(snapshot.pendingLaden, null);
+  assert.equal(snapshot.ladenId, 4);
+  assert.equal(attempts, 2);
+  await store.dispose();
 });

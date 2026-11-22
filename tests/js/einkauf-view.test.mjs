@@ -34,7 +34,7 @@ class Element {
 
 async function setup(t, speech = false) {
   const ids = ['einkauf-add', 'einkauf-name', 'einkauf-preview', 'einkauf-open', 'einkauf-done', 'einkauf-clean', 'einkauf-status', 'ov-einkauf-edit', 'einkauf-edit',
-    ...['name', 'amount', 'unit', 'text', 'note'].map(key => 'einkauf-edit-' + key)];
+    ...['name', 'amount', 'unit', 'text', 'note', 'category'].map(key => 'einkauf-edit-' + key)];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const timers = [], messages = [];
   t.mock.method(globalThis, 'setTimeout', fn => { timers.push(fn); return timers.length; });
@@ -134,4 +134,68 @@ test('swipes keep vertical scrolling free, snap below threshold and undo complet
   swipe(-90); assert.equal(store.entries().length, 0); messages.at(-1).undo();
   assert.equal(store.entries()[0].name, 'Milch');
   timers.at(-1)?.();
+});
+
+
+test('category editor queues the selected category and groups open entries', async t => {
+  const { store, elements:e, click, snapshot } = await setup(t);
+  const id = store.add('Milch');
+  click('einkauf-open', { edit:id });
+  e['einkauf-edit-category'].value = '7';
+  e['einkauf-edit-name'].value = 'Hafermilch';
+  e['einkauf-edit'].fire('submit');
+  const ops = (await snapshot()).ops;
+  assert.deepEqual(ops.slice(-2).map(op => op.daten), [{ name:'Hafermilch' }, { kategorie_id:7 }]);
+  assert.match(e['einkauf-open'].innerHTML, /shopping-category/);
+  assert.match(e['einkauf-open'].innerHTML, /Sonstiges/);
+  store.setDone(id, true);
+  assert.doesNotMatch(e['einkauf-open'].innerHTML, /shopping-category/);
+  assert.match(e['einkauf-done'].innerHTML, /Hafermilch/);
+});
+
+test('long press moves an open entry to another category and done entries do not arm dragging', async t => {
+  const { store, elements:e, timers, snapshot } = await setup(t);
+  const id = store.add('Milch'), next = store.add('Brot');
+  let frame;
+  globalThis.requestAnimationFrame = fn => { frame = fn; return 1; };
+  globalThis.cancelAnimationFrame = () => {};
+  t.after(() => { delete globalThis.requestAnimationFrame; delete globalThis.cancelAnimationFrame; });
+  const category = { dataset:{ category:'7' } };
+  const target = { children:[], insertBefore(el, before) {
+    if (el.parentElement?.children) el.parentElement.children = el.parentElement.children.filter(child => child !== el);
+    el.parentElement = target;
+    const index = before ? target.children.indexOf(before) : target.children.length;
+    target.children.splice(index, 0, el);
+  } };
+  const following = { querySelector:() => ({ dataset:{ id:next } }), getBoundingClientRect:() => ({ top:100, height:50 }) };
+  target.children.push(following);
+  category.querySelector = () => target;
+  const wrapper = new Element(), row = new Element(), ghost = new Element();
+  const rect = { width:200, height:50, left:0, top:0 };
+  wrapper.getBoundingClientRect = () => rect;
+  wrapper.cloneNode = () => ghost;
+  wrapper.before = el => {
+    el.parentElement = { children:[el, wrapper] };
+    el.closest = () => category;
+    el.remove = () => {};
+  };
+  ghost.remove = () => {};
+  row.dataset.id = id; row.parentElement = wrapper; row.setPointerCapture = () => {};
+  row.getBoundingClientRect = () => rect;
+  document.body = { append() {} };
+  document.elementFromPoint = () => ({ closest:() => category });
+  const hit = { closest:() => row };
+  e['einkauf-open'].fire('pointerdown', { target:hit, pointerId:1, isPrimary:true, clientX:10, clientY:20 });
+  timers.at(-1)();
+  assert.ok(frame);
+  e['einkauf-open'].fire('pointermove', { target:hit, pointerId:1, clientX:10, clientY:80 });
+  e['einkauf-open'].fire('pointerup', { target:hit, pointerId:1 });
+  assert.equal(store.entries().find(entry => entry.uuid === id).kategorie_id, 7);
+  const ops = (await snapshot()).ops;
+  assert.deepEqual(ops.slice(-2).map(op => op.typ), ['verschieben', 'inhalt_setzen']);
+  store.setDone(id, true);
+  const count = timers.length;
+  e['einkauf-done'].fire('pointerdown', { target:hit, pointerId:2, isPrimary:true, clientX:10, clientY:20 });
+  assert.equal(timers.length, count);
+  e['einkauf-done'].fire('pointercancel');
 });

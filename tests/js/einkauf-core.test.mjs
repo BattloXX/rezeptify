@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 // Node 20 treats .js as CommonJS without a package.json; load the browser ES module explicitly.
 const source = await readFile(new URL('../../static/js/einkauf-core.js', import.meta.url), 'utf8');
 const { createClock, parseHlc, compareHlc, rangZwischen, rangInitial, rangNach, normalizeName,
-  unitFamily, unitMultiplier, applyOpLocal, rebase, makeOp, sortedEntries, formatAmount } =
+  unitFamily, unitMultiplier, applyOpLocal, rebase, makeOp, sortedEntries, formatAmount, groupByKategorie } =
   await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const fixture = JSON.parse(await readFile(new URL('../fixtures/rang_cases.json', import.meta.url), 'utf8'));
 const hlc = (t = 0, device = 'geraetA') => `${1600000000000 + t}-0000-${device}`;
@@ -249,4 +249,25 @@ test('recipe removal understands formatted mixed fractions and unquantified orig
     apply(s, op('herkunft_entfernen', id, { rezept_id:1 }));
     assert.equal(s.get(id).geloescht, true); assert.equal(s.get(id).menge, menge == null ? null : 0);
   }
+});
+
+
+test('category grouping preserves store order, rank order and hides empty/done/deleted groups', () => {
+  const categories = [{ id:2, name:'Brot' }, { id:1, name:'Obst' }, { id:3, name:'Leer' }, { id:4, name:'Sonstiges' }];
+  const rows = [
+    { uuid:'a', name:'Apfel', rang:'Z', kategorie_id:1 },
+    { uuid:'b', name:'Birne', rang:'A', kategorie_id:1 },
+    { uuid:'c', name:'Brot', rang:'C', kategorie_id:2 },
+    { uuid:'d', name:'Milch', rang:'D', kategorie_id:null },
+    { uuid:'e', name:'Erledigt', rang:'E', kategorie_id:3, erledigt:true },
+    { uuid:'f', name:'Gelöscht', rang:'F', kategorie_id:3, geloescht:true },
+    { uuid:'g', name:'Unbekannt', rang:'G', kategorie_id:999 },
+  ];
+  const groups = groupByKategorie(rows, categories);
+  assert.deepEqual(groups.map(g => g.id), [2, 1, 4]);
+  assert.deepEqual(groups[1].entries.map(e => e.uuid), ['b', 'a']);
+  assert.deepEqual(groups[2].entries.map(e => e.uuid), ['d', 'g']);
+  assert.deepEqual(groupByKategorie([], categories), []);
+  assert.equal(groupByKategorie(rows, []).length, 1);
+  assert.equal(categories[0].entries, undefined);
 });

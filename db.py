@@ -397,3 +397,28 @@ def init_db():
                              hlc, hlc, hlc, hlc, hlc, seq, row["id"]))
             cur.execute("UPDATE einkaufslisten SET seq=%s WHERE uuid=%s", (seq, liste_uuid))
         conn.commit()
+
+        # Shopping categories and store-specific aisle ordering.
+        with conn.cursor() as cur:
+            for table, definition in [
+                ("einkauf_kategorien", """id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) UNIQUE,
+                    icon VARCHAR(40), standard_rang VARCHAR(64), aktiv TINYINT(1) DEFAULT 1"""),
+                ("einkauf_artikel", """name_norm VARCHAR(255) PRIMARY KEY, anzeigename VARCHAR(255),
+                    kategorie_id INT NULL, letzte_menge DECIMAL(10,3) NULL, letzte_einheit VARCHAR(32) NULL,
+                    anzahl_gekauft INT DEFAULT 0, zuletzt_gekauft DATETIME NULL, intervall_tage DECIMAL(6,2) NULL,
+                    vorrat TINYINT(1) DEFAULT 0, ausgeblendet TINYINT(1) DEFAULT 0,
+                    quelle ENUM('start','gelernt') DEFAULT 'gelernt', geaendert_seq BIGINT DEFAULT 0"""),
+                ("laeden", """id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) UNIQUE,
+                    aktiv TINYINT(1) DEFAULT 1, standard TINYINT(1) DEFAULT 0"""),
+                ("laden_kategorie_rang", """laden_id INT, kategorie_id INT, rang VARCHAR(64),
+                    PRIMARY KEY (laden_id,kategorie_id)"""),
+            ]:
+                cur.execute(f"CREATE TABLE IF NOT EXISTS {table} ({definition}) "
+                            "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci")
+            cur.execute("""SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='einkaufslisten' AND COLUMN_NAME='laden_id'""")
+            if not cur.fetchone()["n"]:
+                cur.execute("ALTER TABLE einkaufslisten ADD COLUMN laden_id INT NULL")
+            from services.einkauf_woerterbuch import seed
+            seed(cur)
+        conn.commit()
