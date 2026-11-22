@@ -27,17 +27,20 @@ def _serialize(row):
     return row
 
 
-def _listen(cur):
-    cur.execute("SELECT uuid, name, ist_standard, laden_id FROM einkaufslisten WHERE archiviert=0 ORDER BY erstellt_am, uuid")
-    return [{**row, "ist_standard": bool(row["ist_standard"])} for row in cur.fetchall()]
+def _listen(cur, archivierte=False):
+    cur.execute("""SELECT l.uuid,l.name,l.ist_standard,l.archiviert,l.laden_id,
+        (SELECT COUNT(*) FROM einkaufsliste_eintraege e WHERE e.liste_uuid=l.uuid
+         AND e.geloescht_am IS NULL AND e.erledigt=0) AS offen
+        FROM einkaufslisten l WHERE (%s OR l.archiviert=0) ORDER BY l.erstellt_am,l.uuid""", (archivierte,))
+    return [{**row, "ist_standard": bool(row["ist_standard"]), "archiviert": bool(row["archiviert"])} for row in cur.fetchall()]
 
 
 @router.get("/api/einkauf/listen")
-def get_listen():
+def get_listen(archivierte: bool = False):
     with get_db() as conn:
         with conn.cursor() as cur:
             standard_liste(cur)
-            return {"listen": _listen(cur)}
+            return {"listen": _listen(cur, archivierte)}
 
 
 @router.post("/api/einkauf/sync")
@@ -197,7 +200,7 @@ def _uuid_liste(cur, liste):
     return liste
 
 
-def _uuid_existing(cur, ident):
+def _uuid_existing(cur, ident, requested_liste=None):
     try:
         if str(UUID(ident)) != ident:
             raise ValueError()
@@ -207,6 +210,8 @@ def _uuid_existing(cur, ident):
         UNION SELECT liste_uuid FROM einkauf_aliase WHERE alt_uuid=%s""", (ident, ident))
     found = cur.fetchone()
     if not found:
+        raise HTTPException(404, "Eintrag nicht gefunden")
+    if requested_liste is not None and _uuid_liste(cur, requested_liste) != found["liste_uuid"]:
         raise HTTPException(404, "Eintrag nicht gefunden")
     liste = _uuid_liste(cur, found["liste_uuid"])
     _, row = _entry(cur, ident, liste)
@@ -264,13 +269,13 @@ def add_uuid_eintraege(body: dict):
 
 
 @router.patch("/api/einkauf/eintraege/{ident}")
-def update_uuid_eintrag(ident: str, body: dict):
+def update_uuid_eintrag(ident: str, body: dict, liste: str | None = None):
     allowed = {"name", "notiz", "menge", "einheit", "menge_text", "erledigt", "kategorie_id"}
     if not body or set(body) - allowed:
         raise HTTPException(400, "Ungültige Eintragsdaten")
     with get_db() as conn:
         with conn.cursor() as cur:
-            liste, row = _uuid_existing(cur, ident)
+            liste, row = _uuid_existing(cur, ident, liste)
             ops = []
             content = {key: body[key] for key in ("name", "notiz", "kategorie_id") if key in body}
             if content:
@@ -286,10 +291,10 @@ def update_uuid_eintrag(ident: str, body: dict):
 
 
 @router.delete("/api/einkauf/eintraege/{ident}")
-def delete_uuid_eintrag(ident: str):
+def delete_uuid_eintrag(ident: str, liste: str | None = None):
     with get_db() as conn:
         with conn.cursor() as cur:
-            liste, row = _uuid_existing(cur, ident)
+            liste, row = _uuid_existing(cur, ident, liste)
             _uuid_apply(cur, liste, [server_op("loeschen", row["uuid"], {})])
     return {"ok": True}
 
@@ -413,18 +418,104 @@ def set_reihenfolge(ident: int, body: dict):
     return {"ok": True}
 
 
-@router.patch("/api/einkauf/listen/{ident}")
-def set_listen_laden(ident: str, body: dict):
-    laden = body.get("laden_id")
-    if set(body) != {"laden_id"} or (laden is not None and (type(laden) is not int or laden <= 0)):
+def _listen_daten(body, neu=False):
+    if not body or set(body) - {"name", "archiviert", "ist_standard", "laden_id"} or (neu and set(body) != {"name"}):
+        raise HTTPException(400, "Ungültige Listendaten")
+    values = dict(body)
+    if "name" in values:
+        if not isinstance(values["name"], str) or not 1 <= len(values["name"].strip()) <= 120:
+            raise HTTPException(400, "Name muss 1 bis 120 Zeichen haben")
+        values["name"] = values["name"].strip()
+    for key in ("archiviert", "ist_standard"):
+        if key in values and type(values[key]) is not bool:
+            raise HTTPException(400, "Ungültige Listendaten")
+    if "ist_standard" in values and not values["ist_standard"]:
+        raise HTTPException(400, "Eine neue Standardliste wählen")
+    laden = values.get("laden_id")
+    if laden is not None and (type(laden) is not int or laden <= 0):
         raise HTTPException(400, "Ungültiger Laden")
+    return values
+
+
+def _listen_sperren(cur):
+    standard_liste(cur)
+    cur.execute("SELECT * FROM einkaufslisten ORDER BY uuid FOR UPDATE")
+    return list(cur.fetchall())
+
+
+def _listen_name_frei(rows, name, ident=None):
+    if any(row["uuid"] != ident and not row["archiviert"] and row["name"].casefold() == name.casefold() for row in rows):
+        raise HTTPException(409, "Listenname bereits vorhanden")
+
+
+@router.post("/api/einkauf/listen", status_code=201)
+def create_liste(body: dict):
+    values = _listen_daten(body, neu=True)
     with get_db() as conn:
         with conn.cursor() as cur:
-            _uuid_liste(cur, ident)
-            if laden is not None:
-                _laden(cur, laden)
-            cur.execute("UPDATE einkaufslisten SET laden_id=%s WHERE uuid=%s", (laden, ident))
+            rows = _listen_sperren(cur)
+            _listen_name_frei(rows, values["name"])
+            ident = str(uuid4())
+            cur.execute("INSERT INTO einkaufslisten (uuid,name) VALUES (%s,%s)", (ident, values["name"]))
             return next(row for row in _listen(cur) if row["uuid"] == ident)
+
+
+@router.patch("/api/einkauf/listen/{ident}")
+def set_listen_laden(ident: str, body: dict):
+    values = _listen_daten(body)
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            rows = _listen_sperren(cur)
+            row = next((row for row in rows if row["uuid"] == ident), None)
+            if row is None:
+                raise HTTPException(404, "Liste nicht gefunden")
+            archived = values.get("archiviert", bool(row["archiviert"]))
+            if archived and (row["ist_standard"] or values.get("ist_standard")):
+                raise HTTPException(400, "Standardliste nicht archivierbar")
+            if not archived:
+                _listen_name_frei(rows, values.get("name", row["name"]), ident)
+            if values.get("laden_id") is not None:
+                _laden(cur, values["laden_id"])
+            if values.get("ist_standard"):
+                cur.execute("UPDATE einkaufslisten SET ist_standard=0 WHERE ist_standard=1")
+            cur.execute("UPDATE einkaufslisten SET " + ",".join(key + "=%s" for key in values) + " WHERE uuid=%s",
+                        (*values.values(), ident))
+            return next(row for row in _listen(cur, True) if row["uuid"] == ident)
+
+
+@router.delete("/api/einkauf/listen/{ident}")
+def delete_liste(ident: str):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            rows = _listen_sperren(cur)
+            row = next((row for row in rows if row["uuid"] == ident), None)
+            if row is None:
+                raise HTTPException(404, "Liste nicht gefunden")
+            if row["ist_standard"] or not row["archiviert"]:
+                raise HTTPException(400, "Nur archivierte Nicht-Standardlisten löschbar")
+            for table in ("einkauf_aliase", "einkauf_ops", "einkaufsliste_eintraege"):
+                cur.execute(f"DELETE FROM {table} WHERE liste_uuid=%s", (ident,))
+            cur.execute("DELETE FROM einkaufslisten WHERE uuid=%s", (ident,))
+    return {"ok": True}
+
+
+@router.post("/api/einkauf/eintraege/{ident}/verschieben")
+def move_uuid_eintrag(ident: str, body: dict):
+    if set(body) != {"ziel_liste"}:
+        raise HTTPException(400, "Zielliste erforderlich")
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            _listen_sperren(cur)
+            ziel = _uuid_liste(cur, body["ziel_liste"])
+            liste, row = _uuid_existing(cur, ident)
+            if liste == ziel:
+                raise HTTPException(400, "Andere Zielliste wählen")
+            data = {key: row[key] for key in ("name", "menge", "einheit", "menge_text", "notiz", "kategorie_id", "manuell")}
+            data["manuell"] = bool(data["manuell"])
+            data["herkunft"] = parse_json_field(row["herkunft"])
+            result = _uuid_apply(cur, ziel, [server_op("anlegen", str(uuid4()), data)])[0]
+            _uuid_apply(cur, liste, [server_op("loeschen", row["uuid"], {})])
+            return {"uuid": result["eintrag_uuid"], "liste": ziel}
 
 
 @router.get("/api/einkauf/artikel")

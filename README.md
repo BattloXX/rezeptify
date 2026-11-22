@@ -42,6 +42,17 @@ Aktuelle Version: siehe Datei [`VERSION`](VERSION) bzw. die [Releases](https://g
 | 📅 **Wochenplanung** | Rezepte auf Tage und Mahlzeiten (Frühstück, Mittag, Abend, Snack) verteilen, daraus die Einkaufsliste erzeugen |
 | 🍽️ **„Was kochen wir?"** | Vorschläge aus den eigenen Rezepten nach Zutaten, Zeit, Kategorie, vegetarisch/vegan, Bewertung, Schwierigkeit oder „lange nicht gekocht" |
 
+### Einkaufsliste
+
+Mehrere benannte Listen funktionieren offline und synchronisieren Änderungen zwischen Geräten.
+Listen lassen sich wechseln, umbenennen und archivieren; Zutaten aus Rezepten und Wochenplänen
+werden zusammengeführt, Vorratsartikel übersprungen. Kategorien und Ladenreihenfolgen ordnen
+den Einkauf; Vorschläge und Autovervollständigung helfen beim Ergänzen.
+Der Einkaufsmodus bietet große Zeilen, einen eingeklappten Wagen, Fortschritt und Rückgängig;
+unterstützte Geräte halten den Bildschirm wach. Teilen gruppiert nach Kategorien.
+MCP-Einkaufstools akzeptieren `list_name` (ohne Angabe: Standardliste);
+`list_shopping_lists` zeigt verfügbare Listen, `get_shopping_suggestions` liefert Vorschläge.
+
 ### Betrieb
 
 | Feature | Beschreibung |

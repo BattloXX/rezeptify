@@ -2,6 +2,21 @@ import { createClock, makeOp, applyOpLocal, rebase, sortedEntries, normalizeName
 
 const notify = msg => { if (typeof document !== 'undefined') import('./utils.js').then(({ toast }) => toast(msg)); };
 
+// Pure migration also used when IndexedDB is unavailable. Null denotes an undiscovered default list.
+export function migrateV1(snapshot) {
+  if (!snapshot || snapshot.version === 2) return snapshot;
+  const liste = snapshot.liste ?? null;
+  return { ...structuredClone(snapshot), version: 2,
+    entries: (snapshot.entries || []).map(row => ({ ...row, liste })),
+    ops: (snapshot.ops || []).map(op => ({ ...op, liste })),
+    listen: snapshot.listen || [],
+    contexts: [{ liste, seq: snapshot.seq || 0, aliases: snapshot.aliases || [],
+      ladenId: snapshot.ladenId ?? null, pendingLaden: snapshot.pendingLaden || null,
+      vorschlaege: snapshot.vorschlaege, suggestionsAt: snapshot.suggestionsAt ?? null,
+      suggestionsDirty: snapshot.suggestionsDirty || false }],
+  };
+}
+
 // A snapshot is committed in one transaction: seq must never advance without its entries/outbox.
 export function createStorage(warn = notify) {
   let db, memory = null, warned = false;
@@ -21,11 +36,29 @@ export function createStorage(warn = notify) {
     async load() {
       try {
         db = await new Promise((resolve, reject) => {
-          const request = indexedDB.open('rezeptify-einkauf', 1);
-          request.onupgradeneeded = () => {
-            request.result.createObjectStore('eintraege', { keyPath: 'uuid' });
-            request.result.createObjectStore('outbox', { keyPath: 'op_id' });
-            request.result.createObjectStore('meta', { keyPath: 'key' });
+          const request = indexedDB.open('rezeptify-einkauf', 2);
+          request.onupgradeneeded = event => {
+            const db = request.result, tx = request.transaction;
+            if (event.oldVersion === 0) {
+              db.createObjectStore('eintraege', { keyPath: 'uuid' });
+              db.createObjectStore('outbox', { keyPath: 'op_id' });
+              db.createObjectStore('meta', { keyPath: 'key' });
+            }
+            tx.objectStore('eintraege').createIndex('liste', 'liste');
+            if (event.oldVersion === 1) {
+              const rows = {};
+              let pending = 3;
+              for (const name of ['eintraege', 'outbox', 'meta']) tx.objectStore(name).getAll().onsuccess = e => {
+                rows[name] = e.target.result;
+                if (--pending) return;
+                const migrated = migrateV1({ entries: rows.eintraege, ops: rows.outbox,
+                  ...Object.fromEntries(rows.meta.map(row => [row.key, row.value])) });
+                for (const row of migrated.entries) tx.objectStore('eintraege').put(row);
+                for (const op of migrated.ops) tx.objectStore('outbox').put(op);
+                for (const [key, value] of Object.entries(migrated)) if (!['entries', 'ops'].includes(key))
+                  tx.objectStore('meta').put({ key, value });
+              };
+            }
           };
           request.onsuccess = () => resolve(request.result);
           request.onerror = request.onblocked = () => reject(request.error);
@@ -61,47 +94,58 @@ export function createStorage(warn = notify) {
 export function createStore({ api = (path, opts) => import('./api.js').then(m => m.api(path, opts)),
   storage = createStorage(), now = Date.now, toast = notify } = {}) {
   const events = new EventTarget();
-  let initialized = false, initializing, server = new Map(), state = new Map(), aliases = new Map(), ops = [];
-  let kategorien = [], laeden = [], reihenfolgen = {}, ladenId = null, pendingLaden = null, catalogLoaded = false, catalogAt = 0;
-  let artikel = [], artikelAt = 0, vorschlaege = { faellig:[], haeufig:[], zuletzt:[], wochenplan:[] }, suggestionsAt = null;
-  let articleRequest, suggestionRequest, suggestionsDirty = false;
-  let clock, geraet, liste = null, seq = 0, nr = 0, lastSync = null, fehler = null;
+  let initialized = false, initializing, ops = [], listen = [], contexts = new Map();
+  const emptySuggestions = () => ({ faellig:[], haeufig:[], zuletzt:[], wochenplan:[] });
+  function context(id = liste) {
+    if (!contexts.has(id)) contexts.set(id, { liste:id, server:new Map(), state:new Map(), aliases:new Map(),
+      seq:0, ladenId:null, pendingLaden:null, vorschlaege:emptySuggestions(), suggestionsAt:null, suggestionsDirty:false, polledAt:null });
+    return contexts.get(id);
+  }
+  let kategorien = [], laeden = [], reihenfolgen = {}, catalogLoaded = false, catalogAt = 0;
+  let artikel = [], artikelAt = 0;
+  let articleRequest;
+  let clock, geraet, liste = null, nr = 0, lastSync = null, fehler = null;
   let timer, running, retry = 0, batchSize = 200, writes = Promise.resolve(), disposed = false;
   const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;
   const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
   function emit(type) { events.dispatchEvent(new Event(type)); }
   function persist() {
-    const snapshot = { entries: [...server.values()], ops: structuredClone(ops), aliases: [...aliases],
-      seq, clock: clock.state(), geraet, liste, nr, lastSync, kategorien, laeden, reihenfolgen, ladenId, pendingLaden, artikel, artikelAt, vorschlaege, suggestionsAt, suggestionsDirty };
+    const current = context();
+    const snapshot = { version:2, entries: [...contexts.values()].flatMap(ctx => [...ctx.server.values()].map(row => ({ ...row, liste:ctx.liste }))),
+      ops:structuredClone(ops), listen, contexts:[...contexts.values()].map(({ server, state, aliases, suggestionRequest, ...ctx }) => ({ ...ctx, aliases:[...aliases] })),
+      aliases:[...current.aliases], seq:current.seq, ladenId:current.ladenId, pendingLaden:current.pendingLaden,
+      clock:clock.state(), geraet, liste, nr, lastSync, kategorien, laeden, reihenfolgen, artikel, artikelAt };
     writes = writes.then(() => storage.save(snapshot)).catch(() => toast('Offline-Speicher nicht verfügbar'));
     return writes;
   }
   function rebuild() {
-    const result = rebase(server, aliases, ops.map(({ nr: order, ...op }) => op));
-    state = result.state;
-    ops = result.pendingOps.map((op, i) => ({ ...op, nr: ops[i].nr }));
+    for (const ctx of contexts.values()) {
+      const pending = ops.filter(op => op.liste === ctx.liste);
+      const result = rebase(ctx.server, ctx.aliases, pending.map(({ nr, liste, ...op }) => op));
+      ctx.state = result.state;
+      const rewritten = new Map(result.pendingOps.map((op, i) => [op.op_id, { ...op, nr:pending[i].nr, liste:ctx.liste }]));
+      ops = ops.map(op => rewritten.get(op.op_id) || op);
+    }
     emit('change'); emit('status');
   }
-  function pollDelay() {
-    return typeof document !== 'undefined' && document.getElementById('view-einkauf')?.classList.contains('on') ? 3000 : 30000;
-  }
+  function pollDelay() { return 3000; }
   function scheduleSync(delay = 300) {
     clearTimeout(timer);
     if (disposed || !initialized || !visible() || !online()) return;
     timer = setTimeout(() => { sync(); }, delay);
     timer.unref?.();
   }
-  function enqueue(typ, id, data) {
+  function enqueue(typ, id, data, target = liste) {
     if (!initialized) throw new Error('Einkaufsliste wird geladen');
     const op = makeOp(clock, typ, id, data);
-    const result = applyOpLocal(state, op);
+    const result = applyOpLocal(context(target).state, op);
     if (result.abgelehnt) throw new Error(result.abgelehnt);
-    ops.push({ ...op, nr: ++nr });
+    ops.push({ ...op, nr: ++nr, liste:target });
     persist(); emit('change'); emit('status'); scheduleSync(300);
     return result.ziel;
   }
   function rejectBatch(batch) {
-    for (const op of batch) toast(`Änderung an ${state.get(op.eintrag)?.name || op.daten.name || 'Einkaufsliste'} wurde verworfen`);
+    for (const op of batch) toast(`Änderung an ${context(op.liste).state.get(op.eintrag)?.name || op.daten.name || 'Einkaufsliste'} wurde verworfen`);
     const ids = new Set(batch.map(op => op.op_id));
     ops = ops.filter(op => !ids.has(op.op_id));
   }
@@ -127,75 +171,97 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
     return articleRequest;
   }
   async function refreshSuggestions(force = false) {
-    if (!online() || (!force && suggestionsAt !== null && now() - suggestionsAt < 60000)) return;
-    if (suggestionRequest) return suggestionRequest;
-    suggestionsAt = now();
-    suggestionRequest = (async () => {
-      vorschlaege = await api('/api/einkauf/vorschlaege' + (liste ? `?liste=${encodeURIComponent(liste)}` : ''));
-      suggestionsDirty = false;
+    const ctx = context(), target = liste;
+    if (!online() || (!force && ctx.suggestionsAt !== null && now() - ctx.suggestionsAt < 60000)) return;
+    if (ctx.suggestionRequest) return ctx.suggestionRequest;
+    ctx.suggestionsAt = now();
+    ctx.suggestionRequest = (async () => {
+      ctx.vorschlaege = await api('/api/einkauf/vorschlaege' + (target ? `?liste=${encodeURIComponent(target)}` : ''));
+      ctx.suggestionsDirty = false;
       emit('change'); await persist();
-    })().finally(() => { suggestionRequest = null; });
-    return suggestionRequest;
+    })().finally(() => { ctx.suggestionRequest = null; });
+    return ctx.suggestionRequest;
   }
-  async function flushLaden() {
-    if (!pendingLaden || !liste) return;
-    const pending = pendingLaden;
+  async function flushLaden(ctx) {
+    if (!ctx.pendingLaden || !ctx.liste) return;
+    const pending = ctx.pendingLaden;
     await writes;
     try {
-      await api(`/api/einkauf/listen/${liste}`, { method: 'PATCH', body: JSON.stringify({ laden_id: pending.value }) });
+      await api(`/api/einkauf/listen/${ctx.liste}`, { method:'PATCH', body:JSON.stringify({ laden_id:pending.value }) });
     } catch (error) {
       if (error.status !== 404) throw error;
       toast('Laden nicht mehr vorhanden');
-      if (pendingLaden === pending) ladenId = null;
+      if (ctx.pendingLaden === pending) ctx.ladenId = null;
     }
-    if (pendingLaden === pending) pendingLaden = null;
+    if (ctx.pendingLaden === pending) ctx.pendingLaden = null;
     await persist();
+  }
+  function discover(answer, ctx) {
+    if (ctx.liste === null) {
+      contexts.delete(null); ctx.liste = answer.liste; contexts.set(ctx.liste, ctx);
+      for (const op of ops) if (op.liste === null) op.liste = ctx.liste;
+      if (liste === null) liste = ctx.liste;
+    }
+    if (answer.listen) {
+      listen = answer.listen;
+      for (const row of listen) {
+        const target = context(row.uuid);
+        if (!target.pendingLaden) target.ladenId = row.laden_id ?? null;
+      }
+      if (listen.length && !listen.some(row => row.uuid === liste)) liste = listen.find(row => row.ist_standard)?.uuid || listen[0].uuid;
+    }
+  }
+  async function syncContext(ctx) {
+    if (ctx.pendingLaden) await flushLaden(ctx);
+    do {
+      const batch = ops.filter(op => op.liste === ctx.liste).slice(0, batchSize);
+      let answer;
+      try {
+        const current = clock.state();
+        const hlc = `${String(current.ms).padStart(13, '0')}-${current.counter.toString(16).padStart(4, '0')}-${geraet}`;
+        answer = await api('/api/einkauf/sync', { method:'POST', body:JSON.stringify({
+          liste:ctx.liste, seit:ctx.seq, hlc, ops:batch.map(({ nr, liste, ...op }) => op),
+        }) });
+      } catch (error) {
+        if (error.status === 413 && batch.length > 1) { batchSize = Math.max(1, Math.floor(batch.length / 2)); continue; }
+        if (error.status >= 400 && error.status < 500 && error.status !== 401 && error.status !== 413) {
+          rejectBatch(batch); rebuild(); await persist();
+          if (ops.some(op => op.liste === ctx.liste)) continue;
+        }
+        throw error;
+      }
+      for (const row of answer.eintraege || []) ctx.server.set(row.uuid, row);
+      for (const [id, row] of ctx.server) if (row.geloescht && Number(row.hlc_geloescht.slice(0, 13)) < now() - 30 * 86400000) ctx.server.delete(id);
+      for (const alias of answer.aliase || []) ctx.aliases.set(alias.alt, alias.ziel);
+      const results = answer.ergebnisse || [];
+      rejectBatch(batch.filter(op => results.some(r => r.op_id === op.op_id && r.ergebnis === 'abgelehnt')));
+      const confirmed = new Set(results.map(r => r.op_id));
+      ops = ops.filter(op => !confirmed.has(op.op_id));
+      if (ctx.seq !== answer.seq || results.some(result => result.ergebnis === 'ok')) ctx.suggestionsDirty = true;
+      ctx.seq = answer.seq; ctx.polledAt = now(); clock.observe(answer.hlc);
+      discover(answer, ctx);
+      await flushLaden(ctx);
+      lastSync = now();
+      rebuild(); await persist();
+      if (batch.length && !batch.some(op => confirmed.has(op.op_id))) break;
+    } while (ops.some(op => op.liste === ctx.liste) && online());
   }
   async function run() {
     clearTimeout(timer);
     if (!initialized || !online()) { emit('status'); return; }
     let delay = pollDelay();
     try {
-      if (pendingLaden && liste) await flushLaden();
-      do {
-        const batch = ops.slice(0, batchSize);
-        let answer;
-        try {
-          const current = clock.state();
-          const hlc = `${String(current.ms).padStart(13, '0')}-${current.counter.toString(16).padStart(4, '0')}-${geraet}`;
-          answer = await api('/api/einkauf/sync', { method: 'POST', body: JSON.stringify({
-            liste, seit: seq, hlc, ops: batch.map(({ nr: order, ...op }) => op),
-          }) });
-        } catch (error) {
-          if (error.status === 413 && batch.length > 1) { batchSize = Math.max(1, Math.floor(batch.length / 2)); continue; }
-          if (error.status >= 400 && error.status < 500 && error.status !== 401 && error.status !== 413) {
-            rejectBatch(batch); rebuild(); await persist();
-            if (ops.length) continue;
-          }
-          throw error;
-        }
-        for (const row of answer.eintraege || []) {
-          if (row.geloescht && Number(row.hlc_geloescht.slice(0, 13)) < now() - 30 * 86400000) server.delete(row.uuid);
-          else server.set(row.uuid, row);
-        }
-        for (const [id, row] of server) if (row.geloescht && Number(row.hlc_geloescht.slice(0, 13)) < now() - 30 * 86400000) server.delete(id);
-        for (const alias of answer.aliase || []) aliases.set(alias.alt, alias.ziel);
-        const results = answer.ergebnisse || [];
-        rejectBatch(batch.filter(op => results.some(r => r.op_id === op.op_id && r.ergebnis === 'abgelehnt')));
-        const confirmed = new Set(results.map(r => r.op_id));
-        ops = ops.filter(op => !confirmed.has(op.op_id));
-        const changed = seq !== answer.seq || results.some(result => result.ergebnis === 'ok');
-        seq = answer.seq; liste = answer.liste; clock.observe(answer.hlc);
-        if (!pendingLaden && answer.listen) ladenId = answer.listen.find(row => row.uuid === liste)?.laden_id ?? null;
-        await flushLaden();
-        lastSync = now(); fehler = null; retry = 0;
-        rebuild(); await persist();
-        if (changed) suggestionsDirty = true;
-        // A malformed response must not cause an endless immediate retry.
-        if (batch.length && !batch.some(op => confirmed.has(op.op_id))) break;
-      } while (ops.length && online());
-      const learnedChanged = suggestionsDirty;
-      if (suggestionsDirty) {
+      await syncContext(context());
+      // Always drain every list's outbox; idle background lists poll every 30 seconds.
+      for (const ctx of contexts.values()) {
+        if (ctx.liste === liste) continue;
+        if (!listen.some(row => row.uuid === ctx.liste) && !ops.some(op => op.liste === ctx.liste) && !ctx.pendingLaden) continue;
+        if (ctx.pendingLaden || ops.some(op => op.liste === ctx.liste) || (visible() && (ctx.polledAt === null || now() - ctx.polledAt >= 30000)))
+          await syncContext(ctx);
+      }
+      fehler = null; retry = 0; emit('status');
+      const learnedChanged = [...contexts.values()].some(ctx => ctx.suggestionsDirty);
+      if (context().suggestionsDirty) {
         try { await refreshSuggestions(); } catch { /* Keep cached suggestions. */ }
       }
       // Purchases update last amounts on the server; refresh the article cache at most once a minute.
@@ -221,17 +287,20 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
     init() {
       if (initializing) return initializing;
       initializing = (async () => {
-        const saved = await storage.load();
+        const saved = migrateV1(await storage.load());
         geraet = saved?.geraet || crypto.randomUUID().replace(/-/g, '').slice(0, 20);
         clock = createClock(geraet, now, saved?.clock);
-        server = new Map((saved?.entries || []).map(row => [row.uuid, row]));
-        aliases = new Map(saved?.aliases || []); ops = saved?.ops || [];
-        seq = saved?.seq || 0; liste = saved?.liste || null; nr = saved?.nr || 0; lastSync = saved?.lastSync || null;
+        liste = saved?.liste ?? null; ops = saved?.ops || [];
+        nr = saved?.nr || 0; lastSync = saved?.lastSync || null; listen = saved?.listen || [];
+        for (const cached of saved?.contexts || []) {
+          const ctx = context(cached.liste);
+          Object.assign(ctx, cached, { aliases:new Map(cached.aliases || []),
+            server:new Map((saved?.entries || []).filter(row => row.liste === cached.liste).map(row => [row.uuid, row])),
+            state:new Map(), vorschlaege:cached.vorschlaege || emptySuggestions() });
+        }
+        context();
         kategorien = saved?.kategorien || []; laeden = saved?.laeden || []; reihenfolgen = saved?.reihenfolgen || {};
-        ladenId = saved?.ladenId ?? null; pendingLaden = saved?.pendingLaden || null;
         artikel = saved?.artikel || []; artikelAt = saved?.artikelAt || 0;
-        vorschlaege = saved?.vorschlaege || vorschlaege; suggestionsAt = saved?.suggestionsAt ?? null;
-        suggestionsDirty = saved?.suggestionsDirty || false;
         initialized = true; rebuild(); await persist();
         if (online()) { try { await refreshCatalog(); } catch { /* Keep the cached catalog offline. */ } }
         try { await refreshArticles(); } catch { /* Keep cached articles. */ }
@@ -244,9 +313,37 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
       })();
       return initializing;
     },
-    entries: () => sortedEntries(state),
+    entries: (target = liste) => sortedEntries(context(target).state),
+    liste: () => liste,
+    listen: () => listen.map(row => ({ ...row, offen:context(row.uuid).polledAt !== null || context(row.uuid).state.size
+      ? sortedEntries(context(row.uuid).state).filter(entry => !entry.erledigt).length : row.offen || 0 })),
+    selectList(id) {
+      if (!listen.some(row => row.uuid === id)) throw new Error('Liste nicht gefunden');
+      liste = id; context(); persist(); emit('change'); scheduleSync(0);
+      refreshSuggestions().catch(() => {});
+    },
+    async saveList(id, values) {
+      if (!online()) throw new Error('Listen verwalten ist online möglich');
+      const row = await api('/api/einkauf/listen' + (id ? `/${id}` : ''), { method:id ? 'PATCH' : 'POST', body:JSON.stringify(values) });
+      const data = await api('/api/einkauf/listen');
+      listen = data.listen;
+      for (const item of listen) context(item.uuid);
+      if (!id) liste = row.uuid;
+      if (!listen.some(item => item.uuid === liste)) liste = listen.find(item => item.ist_standard)?.uuid || listen[0]?.uuid || null;
+      persist(); emit('change'); scheduleSync(0);
+      return row;
+    },
+    moveToList(id, target) {
+      if (target === liste || !listen.some(row => row.uuid === target)) throw new Error('Andere Zielliste wählen');
+      const row = context().state.get(id);
+      if (!row || row.geloescht) throw new Error('Eintrag nicht gefunden');
+      const data = Object.fromEntries(['name', 'menge', 'einheit', 'menge_text', 'notiz', 'kategorie_id', 'manuell', 'herkunft'].map(key => [key, row[key] ?? null]));
+      const newId = enqueue('anlegen', crypto.randomUUID(), data, target);
+      enqueue('loeschen', id, {});
+      return newId;
+    },
     artikel: () => structuredClone(artikel),
-    vorschlaege: () => structuredClone(vorschlaege),
+    vorschlaege: () => structuredClone(context().vorschlaege),
     refreshSuggestions, refreshArticles,
     async hideSuggestion(name, tage = 7) {
       await api('/api/einkauf/vorschlaege/ausblenden', { method:'POST', body:JSON.stringify({ name, tage }) });
@@ -258,24 +355,25 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
     },
     async addPlannedRecipes() {
       if (!online()) return;
-      for (const recipe of vorschlaege.wochenplan) {
+      const target = liste;
+      for (const recipe of context(target).vorschlaege.wochenplan) {
         const result = await api(`/api/rezepte/${Number(recipe.rezept_id)}/zu-einkaufsliste`, {
-          method:'POST', body:JSON.stringify({ portionen:recipe.portionen, liste }),
+          method:'POST', body:JSON.stringify({ portionen:recipe.portionen, liste:target }),
         });
         if (result.vorrat?.length && typeof document !== 'undefined') {
           const { toastAction } = await import('./utils.js');
           toastAction(`${result.vorrat.map(item => item.name).join(', ')} vermutlich zuhause`, 'Trotzdem hinzufügen', () => {
-            for (const item of result.vorrat) store.add(item.name, { menge_text:item.menge_text || null });
+            for (const item of result.vorrat) store.add(item.name, { menge_text:item.menge_text || null }, target);
           });
         }
       }
       await sync(); await refreshSuggestions(true);
     },
-    kategorien: () => structuredClone(reihenfolgen[ladenId] || kategorien),
+    kategorien: () => structuredClone(reihenfolgen[context().ladenId] || kategorien),
     laeden: () => structuredClone(laeden),
-    ladenId: () => ladenId,
+    ladenId: () => context().ladenId,
     setLaden(id) {
-      ladenId = id; pendingLaden = { value: id };
+      context().ladenId = id; context().pendingLaden = { value: id };
       persist(); emit('change'); emit('status'); scheduleSync(0);
     },
     async saveLaden(id, values) {
@@ -286,7 +384,7 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
     },
     async deleteLaden(id) {
       await api(`/api/einkauf/laeden/${id}`, { method: 'DELETE' });
-      if (ladenId === id) { ladenId = null; pendingLaden = null; }
+      for (const ctx of contexts.values()) if (ctx.ladenId === id) { ctx.ladenId = null; ctx.pendingLaden = null; }
       await refreshCatalog();
     },
     async saveReihenfolge(id, ids) {
@@ -295,37 +393,37 @@ export function createStore({ api = (path, opts) => import('./api.js').then(m =>
     },
     kategorienFuer: id => structuredClone(reihenfolgen[id] || kategorien),
     setKategorie: (id, kategorie_id) => enqueue('inhalt_setzen', id, { kategorie_id }),
-    status: () => ({ online: online(), pending: ops.length + (pendingLaden ? 1 : 0), lastSync, fehler }),
+    status: () => ({ online: online(), pending: ops.length + [...contexts.values()].filter(ctx => ctx.pendingLaden).length, lastSync, fehler }),
     isInitialized: () => initialized,
     sync, scheduleSync,
-    add(name, { menge = null, einheit = null, menge_text = null, notiz = null, herkunft = [], manuell = true } = {}) {
-      const existing = !menge_text && store.entries().find(row => !row.erledigt && !row.menge_text &&
+    add(name, { menge = null, einheit = null, menge_text = null, notiz = null, herkunft = [], manuell = true } = {}, target = liste) {
+      const existing = !menge_text && store.entries(target).find(row => !row.erledigt && !row.menge_text &&
         normalizeName(row.name) === normalizeName(name) && unitFamily(row.einheit) === unitFamily(einheit));
-      if (existing) return enqueue('menge_plus', existing.uuid, { menge: menge ?? (unitFamily(einheit) === '' ? 1 : 0), einheit });
+      if (existing) return enqueue('menge_plus', existing.uuid, { menge: menge ?? (unitFamily(einheit) === '' ? 1 : 0), einheit }, target);
       return enqueue('anlegen', crypto.randomUUID(), { name, menge, einheit, menge_text, notiz, herkunft, manuell,
-        rang: rangNach([...state.values()].map(row => row.rang).sort().at(-1) ?? null) });
+        rang: rangNach([...context(target).state.values()].map(row => row.rang).sort().at(-1) ?? null) }, target);
     },
-    restore(entry) {
+    restore(entry, target = liste) {
       const id = enqueue('anlegen', crypto.randomUUID(), {
         name: entry.name, menge: entry.menge, einheit: entry.einheit, menge_text: entry.menge_text,
         notiz: entry.notiz, herkunft: entry.herkunft || [], manuell: entry.manuell,
         rang: entry.rang, kategorie_id: entry.kategorie_id ?? null,
-      });
-      if (entry.erledigt) store.setDone(id, true);
+      }, target);
+      if (entry.erledigt) store.setDone(id, true, target);
       return id;
     },
-    toggle(id) { return store.setDone(id, !state.get(id)?.erledigt); },
-    setDone: (id, erledigt) => enqueue('status_setzen', id, { erledigt }),
+    toggle(id) { return store.setDone(id, !context().state.get(id)?.erledigt); },
+    setDone: (id, erledigt, target = liste) => enqueue('status_setzen', id, { erledigt }, target),
     setAmount: (id, menge, einheit, menge_text) => enqueue('menge_setzen', id, { menge, einheit, menge_text }),
-    plus: (id, delta) => enqueue('menge_plus', id, { menge: delta, einheit: state.get(id)?.einheit ?? null }),
+    plus: (id, delta, target = liste) => enqueue('menge_plus', id, { menge: delta, einheit: context(target).state.get(id)?.einheit ?? null }, target),
     rename: (id, name) => enqueue('inhalt_setzen', id, { name }),
     setNote: (id, notiz) => enqueue('inhalt_setzen', id, { notiz }),
     removeRecipe(rezeptId) {
       for (const row of store.entries()) if ((row.herkunft || []).some(origin => origin.rezept_id === rezeptId))
         enqueue('herkunft_entfernen', row.uuid, { rezept_id: rezeptId });
     },
-    remove: id => enqueue('loeschen', id, {}),
-    move: (id, vorUuid, nachUuid) => enqueue('verschieben', id, { rang: rangZwischen(state.get(vorUuid)?.rang ?? null, state.get(nachUuid)?.rang ?? null) }),
+    remove: (id, target = liste) => enqueue('loeschen', id, {}, target),
+    move: (id, vorUuid, nachUuid) => enqueue('verschieben', id, { rang: rangZwischen(context().state.get(vorUuid)?.rang ?? null, context().state.get(nachUuid)?.rang ?? null) }),
     clearDone() {
       const done = store.entries().filter(row => row.erledigt);
       for (let i = 0; i < done.length; i += 500) enqueue('erledigte_loeschen', null, {

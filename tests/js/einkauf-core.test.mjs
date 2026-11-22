@@ -225,7 +225,8 @@ test('recipe removal subtracts all matching origins, converts units and replays 
   assert.equal(state.get(id).menge, 400);
   assert.deepEqual(state.get(id).herkunft, origins.slice(2));
   applyOpLocal(state, op('menge_setzen', id, { menge: 2, einheit: 'kg', menge_text: null }, 20));
-  assert.equal(state.get(id).menge, 1400);
+  assert.equal(state.get(id).menge, 1.4);
+  assert.equal(state.get(id).einheit, 'kg');
 });
 
 test('recipe removal respects manual entries, tombstones, missing quantities and newer sets', () => {

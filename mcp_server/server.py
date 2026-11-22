@@ -21,7 +21,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from mcp_server.client import DuplicateRecipeError, RezeptifyClient
+from mcp_server.client import DuplicateRecipeError, ShoppingListNotFound, RezeptifyClient
 from mcp_server.oauth_provider import RezeptifyOAuthProvider
 
 
@@ -40,8 +40,8 @@ def _logged(fn):
             logger.info("MCP-Tool %s ok in %.0f ms", fn.__name__,
                         (time.monotonic() - started) * 1000)
             return result
-        except DuplicateRecipeError as exc:
-            logger.info("MCP-Tool %s: ähnliches Rezept vorhanden", fn.__name__)
+        except (DuplicateRecipeError, ShoppingListNotFound) as exc:
+            logger.info("MCP-Tool %s: %s", fn.__name__, exc)
             raise ToolError(str(exc)) from exc
         except Exception as exc:
             logger.exception("MCP-Tool %s fehlgeschlagen", fn.__name__)
@@ -217,23 +217,34 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     @_logged
-    async def get_shopping_list(include_done: bool = False) -> list[dict]:
-        """Read the shared shopping list, optionally including completed items.
-
-        Call this before changes to obtain item_id (the returned id). Changes
-        appear immediately on all devices.
-        """
-        return await client.get_shopping_list(include_done)
+    async def list_shopping_lists() -> list[dict]:
+        """List available shopping lists with their names, UUIDs and open item counts."""
+        return await client.list_shopping_lists()
 
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     @_logged
-    async def get_shopping_suggestions() -> dict:
+    async def get_shopping_list(include_done: bool = False, list_name: str | None = None) -> list[dict]:
+        """Read the shared shopping list, optionally including completed items.
+
+        list_name selects a list by name (case-insensitive); omitted uses the default list.
+
+        Call this before changes to obtain item_id (the returned id). Changes
+        appear immediately on all devices.
+        """
+        return await client.get_shopping_list(include_done, **({"list_name": list_name} if list_name is not None else {}))
+
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    @_logged
+    async def get_shopping_suggestions(list_name: str | None = None) -> dict:
         """Suggest missing items to the user from due/frequent purchases and planned recipes.
+
+        list_name selects a list by name (case-insensitive); omitted uses the default list.
 
         Nothing is added automatically; use these suggestions to ask the user what they need.
         """
-        return await client.get_shopping_suggestions()
+        return await client.get_shopping_suggestions(**({"list_name": list_name} if list_name is not None else {}))
 
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
@@ -241,8 +252,11 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
     async def add_to_shopping_list(
         items: Annotated[list[ShoppingItem] | None, Field(min_length=1, max_length=100)] = None,
         text: Annotated[str | None, Field(min_length=1, max_length=2000)] = None,
+        list_name: str | None = None,
     ) -> list[dict]:
         """Add up to 100 items to the shared shopping list.
+
+        list_name selects a list by name (case-insensitive); omitted uses the default list.
 
         Supply exactly one of items or text. Free text (max 2000 characters)
         accepts quantities, parenthesized notes and multiple entries separated
@@ -256,14 +270,16 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         if (items is None) == (text is None):
             raise ValueError("Supply exactly one of items or text")
         if text is not None:
-            return await client.add_shopping_items(text=text)
-        return await client.add_shopping_items([item.model_dump() for item in items])
+            return await client.add_shopping_items(text=text, **({"list_name": list_name} if list_name is not None else {}))
+        return await client.add_shopping_items([item.model_dump() for item in items], **({"list_name": list_name} if list_name is not None else {}))
 
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
     @_logged
-    async def add_recipe_to_shopping_list(recipe_id: int, servings: int | None = None) -> dict:
+    async def add_recipe_to_shopping_list(recipe_id: int, servings: int | None = None, list_name: str | None = None) -> dict:
         """Add a recipe's ingredients, scaled to servings (default: recipe servings).
+
+        list_name selects a list by name (case-insensitive); omitted uses the default list.
 
         Returns {items, skipped_pantry}. Pantry staples (salt, pepper, oil, ...) are
         skipped and listed in skipped_pantry; add them explicitly if needed.
@@ -272,13 +288,15 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         First call get_shopping_list to inspect items and obtain their item_id
         before changes. Changes appear immediately on all devices.
         """
-        return await client.add_recipe_to_shopping_list(recipe_id, servings)
+        return await client.add_recipe_to_shopping_list(recipe_id, servings, **({"list_name": list_name} if list_name is not None else {}))
 
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
     @_logged
-    async def add_week_plan_to_shopping_list(start_date: str, end_date: str) -> list[dict]:
+    async def add_week_plan_to_shopping_list(start_date: str, end_date: str, list_name: str | None = None) -> list[dict]:
         """Add ingredients from the inclusive week-plan range (YYYY-MM-DD).
+
+        list_name selects a list by name (case-insensitive); omitted uses the default list.
 
         Equal names with compatible units merge automatically, adding quantities.
         First call get_shopping_list to inspect items and obtain their item_id
@@ -286,7 +304,7 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         """
         if any(date.fromisoformat(value).isoformat() != value for value in (start_date, end_date)):
             raise ValueError("Dates must use YYYY-MM-DD")
-        return await client.add_week_plan_to_shopping_list(start_date, end_date)
+        return await client.add_week_plan_to_shopping_list(start_date, end_date, **({"list_name": list_name} if list_name is not None else {}))
 
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
@@ -294,8 +312,11 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
     async def update_shopping_item(
         item_id: str, name: str | None = None, quantity: float | None = None,
         unit: str | None = None, note: str | None = None, done: bool | None = None,
+        list_name: str | None = None,
     ) -> dict:
         """Update an item; omitted or None fields stay unchanged, empty note clears it.
+
+        list_name selects a list by name (case-insensitive); omitted uses the default list.
 
         First call get_shopping_list to obtain item_id from the returned id.
         Pass structured quantities, e.g. name="Kartoffeln", quantity=2, unit="kg".
@@ -305,29 +326,32 @@ def _register_tools(server: MCPServer, client: RezeptifyClient, base_url: str) -
         fields = {key: value for key, value in {
             "name": name, "quantity": quantity, "unit": unit, "note": note, "done": done,
         }.items() if value is not None}
-        return await client.update_shopping_item(item_id, **fields)
+        return await client.update_shopping_item(item_id, **fields, **({"list_name": list_name} if list_name is not None else {}))
 
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False))
     @_logged
-    async def remove_shopping_item(item_id: str) -> dict:
+    async def remove_shopping_item(item_id: str, list_name: str | None = None) -> dict:
         """Delete one shared item. First call get_shopping_list to obtain item_id.
+
+        list_name selects a list by name (case-insensitive); omitted uses the default list.
 
         Changes appear immediately on all devices.
         """
-        return await client.remove_shopping_item(item_id)
+        return await client.remove_shopping_item(item_id, **({"list_name": list_name} if list_name is not None else {}))
 
     @server.tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False))
     @_logged
-    async def clear_done_shopping_items() -> dict:
+    async def clear_done_shopping_items(list_name: str | None = None) -> dict:
         """Delete all completed items from the shared shopping list.
+
+        list_name selects a list by name (case-insensitive); omitted uses the default list.
 
         First call get_shopping_list(include_done=True) to inspect completed
         items and their item_id. Changes appear immediately on all devices.
         """
-        return await client.clear_done_shopping_items()
-
+        return await client.clear_done_shopping_items(**({"list_name": list_name} if list_name is not None else {}))
 
 
 def create_server(client: RezeptifyClient, base_url: str) -> MCPServer:

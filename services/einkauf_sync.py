@@ -545,7 +545,7 @@ def aenderungen_seit(cur, liste_uuid, seit):
     cur.execute("""SELECT * FROM einkaufsliste_eintraege WHERE liste_uuid=%s
         AND (%s=0 OR seq>%s) ORDER BY seq, id LOCK IN SHARE MODE""", (liste_uuid, seit, seit))
     entries = []
-    fields = ("uuid", "id", "name", "notiz", "einheit", "menge_text", "rang", "kategorie_id", "seq") + _HLC_FIELDS
+    fields = ("uuid", "liste_uuid", "id", "name", "notiz", "einheit", "menge_text", "rang", "kategorie_id", "seq") + _HLC_FIELDS
     for row in cur.fetchall():
         entry = {key: row[key] for key in fields}
         entry.update(menge=float(row["menge"]) if row["menge"] is not None else None,

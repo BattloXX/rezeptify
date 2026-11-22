@@ -265,7 +265,7 @@ export function applyOpLocal(state, op) {
           if (deltas.length) {
             const total = (values.menge ?? (unitFamily(values.einheit) === '' ? 1 : 0)) * unitMultiplier(values.einheit) +
               deltas.reduce((sum, delta) => sum + delta.amount * unitMultiplier(delta.unit), 0);
-            values.menge = Math.max(0, total); values.einheit = knownUnit(values.einheit)?.[0] ?? values.einheit;
+            values.menge = Math.round(Math.max(0, total) / unitMultiplier(values.einheit) * 1000) / 1000;
           }
         }
         if (typ === 'inhalt_setzen' && Object.hasOwn(values, 'name')) values.name = values.name.trim();

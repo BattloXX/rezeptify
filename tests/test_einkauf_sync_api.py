@@ -20,7 +20,7 @@ def test_empty_sync_and_list_catalog(client):
     assert result["seq"] == 0 and result["eintraege"] == []
     assert result["aliase"] == [] and result["ergebnisse"] == []
     assert parse_hlc(result["hlc"])[2] == 'server'
-    assert result["listen"] == [{"uuid": result["liste"], "name": "Einkauf", "ist_standard": True, "laden_id": None}]
+    assert result["listen"] == [{"uuid": result["liste"], "name": "Einkauf", "ist_standard": True, "laden_id": None, "archiviert": False, "offen": 0}]
     assert client.get('/api/einkauf/listen').json() == {"listen": result["listen"]}
 
 

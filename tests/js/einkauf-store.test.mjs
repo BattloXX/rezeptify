@@ -8,10 +8,10 @@ const moduleUrl = source => 'data:text/javascript;base64,' + Buffer.from(source)
 const coreUrl = moduleUrl(await readFile(new URL('../../static/js/einkauf-core.js', import.meta.url), 'utf8'));
 const core = await import(coreUrl);
 const source = await readFile(new URL('../../static/js/einkauf-store.js', import.meta.url), 'utf8');
-const { createStore, createStorage } = await import(moduleUrl(source.replace("'./einkauf-core.js'", JSON.stringify(coreUrl))));
+const { createStore, createStorage, migrateV1 } = await import(moduleUrl(source.replace("'./einkauf-core.js'", JSON.stringify(coreUrl))));
 const now = 1700000000000;
 
-async function setup(t, handler, saved = null) {
+async function setup(t, handler, saved = null, clockNow = () => now) {
   let connected = false;
   const calls = [], delays = [], messages = [];
   t.mock.method(globalThis, 'setTimeout', (fn, delay) => { delays.push(delay); return { unref() {} }; });
@@ -25,7 +25,7 @@ async function setup(t, handler, saved = null) {
   let snapshot = saved;
   const server = new Map();
   const store = createStore({
-    now: () => now,
+    now: clockNow,
     storage: { load: async () => snapshot, save: async data => { snapshot = structuredClone(data); } },
     toast: msg => messages.push(msg),
     api: async (path, opts) => {
@@ -292,4 +292,92 @@ test('article and suggestion caches survive offline reload, throttle refresh and
   await restored.refreshSuggestions(); await restored.refreshArticles();
   assert.equal(calls.length, before);
   await restored.dispose();
+});
+
+
+test('v1 migration assigns entries and pending operations to the default list without mutating input', () => {
+  const original = { liste:'first', seq:12, entries:[{ uuid:'entry' }], ops:[{ op_id:'op', nr:1 }], aliases:[['old', 'entry']] };
+  const migrated = migrateV1(original);
+  assert.equal(migrated.version, 2);
+  assert.equal(migrated.entries[0].liste, 'first');
+  assert.equal(migrated.ops[0].liste, 'first');
+  assert.equal(migrated.contexts[0].seq, 12);
+  assert.deepEqual(migrated.contexts[0].aliases, original.aliases);
+  assert.equal(original.entries[0].liste, undefined);
+  assert.deepEqual(migrateV1(migrated), migrated);
+  assert.equal(migrateV1({ ops:[{}] }).ops[0].liste, null);
+});
+
+const lists = [{ uuid:'first', name:'Markt', ist_standard:true }, { uuid:'second', name:'Drogerie' }];
+
+test('two lists keep independent state, seq, shop and outboxes; switching during a request keeps ownership', async t => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const servers = new Map();
+  const saved = { liste:'first', listen:lists };
+  const { store, calls, connect, snapshot } = await setup(t, async (request, count) => {
+    if (count === 1) await gate;
+    if (!servers.has(request.liste)) servers.set(request.liste, new Map());
+    const state = servers.get(request.liste);
+    for (const op of request.ops) assert.ok(!core.applyOpLocal(state, op).abgelehnt);
+    return answer(request, [...state.values()], { liste:request.liste, listen:lists, seq:request.liste === 'first' ? 3 : 7 });
+  }, saved);
+  const id = store.add('Milch', { menge:2, einheit:'l', notiz:'Bio' });
+  connect(); const running = store.sync();
+  store.selectList('second');
+  store.add('Seife');
+  release(); await running;
+  assert.equal(store.liste(), 'second');
+  assert.deepEqual(store.entries().map(row => row.name), ['Seife']);
+  await store.sync();
+  assert.equal(calls.find(request => request.liste === 'second').seit, 0);
+  assert.equal(store.status().pending, 0);
+  store.selectList('first');
+  assert.equal(store.entries()[0].uuid, id);
+  store.moveToList(id, 'second');
+  assert.deepEqual(store.entries(), []);
+  store.selectList('second');
+  const moved = store.entries().find(row => row.name === 'Milch');
+  assert.notEqual(moved.uuid, id); assert.equal(moved.notiz, 'Bio');
+  await store.dispose();
+  assert.deepEqual(snapshot().ops.map(op => [op.typ, op.liste]), [['anlegen', 'second'], ['loeschen', 'first']]);
+  const restored = await setup(t, undefined, snapshot());
+  assert.equal(restored.store.liste(), 'second');
+  assert.equal(restored.store.entries().find(row => row.name === 'Milch').menge, 2);
+  restored.store.selectList('first'); assert.deepEqual(restored.store.entries(), []);
+});
+
+
+test('background lists poll after 30 seconds and all outboxes drain regardless of active list', async t => {
+  let time = now;
+  const { store, calls, connect } = await setup(t, request => answer(request, [], { liste:request.liste, listen:lists }),
+    { liste:'first', listen:lists }, () => time);
+  connect(); await store.sync();
+  assert.deepEqual(calls.map(request => request.liste), ['first', 'second']);
+  time += 3000; await store.sync();
+  assert.deepEqual(calls.slice(2).map(request => request.liste), ['first']);
+  time += 27000; await store.sync();
+  assert.deepEqual(calls.slice(3).map(request => request.liste), ['first', 'second']);
+  store.selectList('second'); store.add('Seife'); store.selectList('first');
+  await store.sync();
+  assert.equal(calls.at(-1).liste, 'second');
+  assert.equal(calls.at(-1).ops[0].daten.name, 'Seife');
+  assert.equal(calls.at(-1).ops[0].liste, undefined);
+  assert.equal(store.status().pending, 0);
+});
+
+
+test('undo keeps the original list after switching lists', async t => {
+  const { store } = await setup(t, undefined, { liste:'first', listen:lists });
+  const id = store.add('Milch');
+  const target = store.liste();
+  store.setDone(id, true);
+  const entry = structuredClone(store.entries()[0]);
+  store.clearDone();
+  store.selectList('second'); store.add('Seife');
+  const restored = store.restore(entry, target);
+  store.setDone(restored, false, target);
+  assert.deepEqual(store.entries().map(row => row.name), ['Seife']);
+  assert.equal(store.entries(target)[0].name, 'Milch');
+  assert.equal(store.entries(target)[0].erledigt, false);
 });

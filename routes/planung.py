@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from auth import require_auth
 from db import get_db, get_bilder_batch
+from routes.einkauf import _uuid_liste
 from services.shopping_service import merge_or_add, zutaten_fuer_einkauf
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -101,5 +102,5 @@ def wochenplan_einkaufsliste(body: dict):
             vorrat = []
             for recipe in cur.fetchall():
                 items.extend(zutaten_fuer_einkauf(recipe, recipe["plan_portionen"] or recipe["portionen"] or 1, cur, vorrat))
-            changed = merge_or_add(cur, items)
+            changed = merge_or_add(cur, items, _uuid_liste(cur, body.get("liste")))
     return {"anzahl": len(changed), "vorrat": vorrat}

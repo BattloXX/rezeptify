@@ -349,14 +349,16 @@ async function addToShoppingList() {
   if (!S.current) return;
   const btn = document.getElementById('btn-add-shopping');
   try {
+    await shoppingStore.init();
+    const target = shoppingStore.liste();
     const result = await api('/api/rezepte/' + S.current.id + '/zu-einkaufsliste', {
-      method: 'POST', body: JSON.stringify({ portionen: portionState.current })
+      method: 'POST', body: JSON.stringify({ portionen: portionState.current, liste: target })
     });
     await onAnyShoppingChange();
     if (result.vorrat?.length) {
       await shoppingStore.init();
       toastAction(`${result.vorrat.map(item => item.name).join(', ')} vermutlich zuhause`, 'Trotzdem hinzufügen', () => {
-        for (const item of result.vorrat) shoppingStore.add(item.name, { menge_text:item.menge_text || null });
+        for (const item of result.vorrat) shoppingStore.add(item.name, { menge_text:item.menge_text || null }, target);
       });
     }
     const old = btn.innerHTML;

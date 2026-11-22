@@ -398,7 +398,8 @@
 
     <!-- ── EINKAUF view ──────────────────────────────────────────────── -->
     <section id="view-einkauf" class="view">
-      <div class="shopping-header"><h2>Einkaufsliste</h2><select id="einkauf-laden" class="fc shopping-shop" aria-label="Laden"><option value="">Kein Laden</option></select><button id="einkauf-manage" class="icon-pill" type="button">Einstellungen</button><button class="icon-pill" onclick="shareShopping()"><span class="material-symbols-outlined">share</span> Teilen</button></div>
+      <div class="shopping-header"><h2>Einkaufsliste</h2><select id="einkauf-liste" class="fc shopping-shop" aria-label="Einkaufsliste"></select><button id="einkauf-start" class="icon-pill" type="button">Einkaufen</button><button id="einkauf-exit" class="btn btn-ghost" type="button" hidden>Zurück</button><select id="einkauf-laden" class="fc shopping-shop" aria-label="Laden"><option value="">Kein Laden</option></select><button id="einkauf-manage" class="icon-pill" type="button">Einstellungen</button><button class="icon-pill" onclick="shareShopping()"><span class="material-symbols-outlined">share</span> Teilen</button></div>
+      <div id="einkauf-progress" hidden><label id="einkauf-progress-label" for="einkauf-progress-bar"></label><progress id="einkauf-progress-bar" max="1" value="0"></progress><button id="einkauf-finish" type="button" class="btn btn-accent">Einkauf abschließen</button><p id="einkauf-success" role="status" hidden>Alles im Wagen! <button id="einkauf-success-finish" type="button" class="btn btn-accent">Abschließen</button></p></div>
       <div id="einkauf-status" class="shopping-status" role="status"></div>
       <form id="einkauf-add" class="shopping-add"><input id="einkauf-name" class="fc" placeholder="Eintrag hinzufügen…" autocomplete="off"><button class="btn btn-accent" type="submit"><span class="material-symbols-outlined">add</span> Hinzufügen</button></form>
       <div id="einkauf-autocomplete" class="shopping-autocomplete" role="listbox" hidden></div>
@@ -406,7 +407,7 @@
       <section id="einkauf-due" hidden><h3>Wieder fällig</h3><div id="einkauf-due-chips" class="shopping-chips"></div></section>
       <aside id="einkauf-planned" class="shopping-plan-hint" hidden></aside>
       <div class="shopping-section"><h3>Offen</h3><div id="einkauf-open"></div></div>
-      <div class="shopping-section"><div class="shopping-done-head"><h3>Erledigt</h3><button id="einkauf-clean" class="btn btn-ghost" onclick="clearDone()" hidden>Erledigte löschen</button></div><div id="einkauf-done"></div></div>
+      <div id="einkauf-done-section" class="shopping-section"><div class="shopping-done-head"><h3 id="einkauf-done-title">Erledigt</h3><button id="einkauf-cart-toggle" class="btn btn-ghost" type="button" aria-expanded="false" aria-controls="einkauf-done" hidden>Im Wagen (0)</button><button id="einkauf-clean" class="btn btn-ghost" onclick="clearDone()" hidden>Erledigte löschen</button></div><div id="einkauf-done"></div></div>
       <details id="einkauf-recent"><summary>Zuletzt gekauft</summary><div id="einkauf-recent-chips" class="shopping-chips"></div></details>
     </section>
 
@@ -482,6 +483,7 @@
       <label>Einheit (frei eingeben)<input id="einkauf-edit-unit" class="fc" maxlength="32"></label>
       <label>Freitext-Menge (statt Zahl)<input id="einkauf-edit-text" class="fc" maxlength="64" placeholder="z. B. 2–3"></label>
       <label>Kategorie<select id="einkauf-edit-category" class="fc"></select></label>
+      <label>In andere Liste verschieben<select id="einkauf-edit-list" class="fc"><option value="">Auf dieser Liste lassen</option></select></label>
       <label>Notiz<input id="einkauf-edit-note" class="fc" maxlength="255"></label>
     </div>
     <div class="form-footer"><button type="button" class="btn btn-ghost" data-edit-delete>Löschen</button><button type="button" class="btn btn-ghost" data-edit-cancel>Abbrechen</button><button class="btn btn-accent" type="submit">Speichern</button></div>
@@ -490,8 +492,13 @@
 
 <div id="ov-einkauf-laeden" class="overlay">
   <div class="modal plan-modal" role="dialog" aria-modal="true" aria-labelledby="einkauf-laeden-title">
-    <div class="form-header"><span id="einkauf-laeden-title" class="form-header-title">Läden &amp; Reihenfolge</span><button type="button" class="form-header-close" data-shops-close aria-label="Schließen">×</button></div>
+    <div class="form-header"><span id="einkauf-laeden-title" class="form-header-title">Listen, Läden &amp; Reihenfolge</span><button type="button" class="form-header-close" data-shops-close aria-label="Schließen">×</button></div>
     <div class="plan-modal-body shopping-edit-body">
+      <section><h3>Listen</h3>
+        <form id="einkauf-list-new" class="shopping-add"><input id="einkauf-list-name" class="fc" maxlength="120" required placeholder="Neue Liste" aria-label="Neue Liste"><button class="btn btn-accent" type="submit">Neue Liste</button></form>
+        <form id="einkauf-list-form"><label>Aktuelle Liste umbenennen<input id="einkauf-list-rename" class="fc" maxlength="120" required></label><label><input id="einkauf-list-default" type="checkbox"> Standardliste</label><button class="btn btn-ghost" type="submit">Speichern</button><button id="einkauf-list-archive" class="btn btn-ghost" type="button">Archivieren</button></form>
+        <p id="einkauf-list-message" role="status"></p>
+      </section>
       <form id="einkauf-shop-new" class="shopping-add"><input id="einkauf-shop-name" class="fc" maxlength="80" required placeholder="Neuer Laden" aria-label="Neuer Laden"><button class="btn btn-accent" type="submit">Anlegen</button></form>
       <label>Laden verwalten<select id="einkauf-shop-edit" class="fc"></select></label>
       <form id="einkauf-shop-form"><label>Name<input id="einkauf-shop-rename" class="fc" required maxlength="80"></label><label><input id="einkauf-shop-active" type="checkbox"> Aktiv</label><label><input id="einkauf-shop-default" type="checkbox"> Standard</label><button class="btn btn-ghost" type="submit">Speichern</button><button id="einkauf-shop-delete" class="btn btn-ghost" type="button">Löschen</button></form>

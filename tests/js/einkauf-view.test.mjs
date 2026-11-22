@@ -23,7 +23,7 @@ class Element {
   set value(value) { this._value = String(value); }
   addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
   fire(name, event = {}) {
-    event.target ||= this; event.preventDefault ||= () => {}; event.stopPropagation ||= () => {};
+    event.target ||= this; event.preventDefault ||= () => {}; event.stopPropagation ||= () => {}; event.stopImmediatePropagation ||= () => {};
     for (const fn of this.listeners[name] || []) fn(event);
   }
   closest(selector) { return selector === 'button' ? this : null; }
@@ -33,17 +33,17 @@ class Element {
 }
 
 async function setup(t, speech = false) {
-  const ids = ['einkauf-autocomplete', 'einkauf-add', 'einkauf-name', 'einkauf-preview', 'einkauf-open', 'einkauf-done', 'einkauf-clean', 'einkauf-status', 'ov-einkauf-edit', 'einkauf-edit',
+  const ids = ['einkauf-liste', 'einkauf-start', 'einkauf-exit', 'einkauf-progress', 'einkauf-progress-label', 'einkauf-progress-bar', 'einkauf-finish', 'einkauf-success', 'einkauf-success-finish', 'einkauf-cart-toggle', 'einkauf-done-title', 'einkauf-autocomplete', 'einkauf-add', 'einkauf-name', 'einkauf-preview', 'einkauf-open', 'einkauf-done', 'einkauf-clean', 'einkauf-status', 'ov-einkauf-edit', 'einkauf-edit',
     ...['name', 'amount', 'unit', 'text', 'note', 'category'].map(key => 'einkauf-edit-' + key)];
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const timers = [], messages = [];
   t.mock.method(globalThis, 'setTimeout', fn => { timers.push(fn); return timers.length; });
   t.mock.method(globalThis, 'clearTimeout', () => {});
-  const doc = { getElementById: id => elements[id], querySelectorAll: () => [], createElement: () => new Element(),
-    addEventListener() {}, removeEventListener() {} };
+  const doc = { listeners:{}, fire:Element.prototype.fire, body:new Element(), getElementById: id => elements[id], querySelectorAll: () => [], createElement: () => new Element(),
+    addEventListener:Element.prototype.addEventListener, removeEventListener() {} };
   const recognition = [];
   class Recognition { constructor() { recognition.push(this); } start() {} }
-  for (const [key, value] of Object.entries({ document:doc, window:{ addEventListener() {}, removeEventListener() {}, ...(speech ? { SpeechRecognition:Recognition } : {}) }, navigator:{ onLine:false } })) {
+  for (const [key, value] of Object.entries({ document:doc, window:{ listeners:{}, fire:Element.prototype.fire, location:{ href:'http://test/' }, addEventListener:Element.prototype.addEventListener, removeEventListener() {}, ...(speech ? { SpeechRecognition:Recognition } : {}) }, navigator:{ onLine:false }, history:{ state:null, pushState(state) { this.state = state; }, back() {} } })) {
     const original = Object.getOwnPropertyDescriptor(globalThis, key);
     Object.defineProperty(globalThis, key, { configurable:true, value });
     t.after(() => original ? Object.defineProperty(globalThis, key, original) : delete globalThis[key]);
@@ -64,7 +64,7 @@ async function setup(t, speech = false) {
   view.initEinkauf();
   await view.loadEinkauf();
   const click = (id, dataset) => { const button = new Element(); button.dataset = dataset; elements[id].fire('click', { target:button }); };
-  return { store, elements, messages, timers, recognition, click, snapshot:async () => { await store.dispose(); return snapshot; } };
+  return { store, elements, messages, timers, recognition, click, view, snapshot:async () => { await store.dispose(); return snapshot; } };
 }
 
 test('input preview, parsed submission, merged quantities and batch undo', async t => {
@@ -220,4 +220,61 @@ test('autocomplete Enter uses saved quantities; typed amounts win; Escape and ar
   input.value = 'Mil'; input.fire('input');
   input.fire('keydown', { key:'Escape' });
   assert.equal(box.hidden, true);
+});
+
+
+test('shopping mode tracks progress, checks by tap, finishes with undo and releases wake lock', async t => {
+  const { store, elements:e, messages, click, view } = await setup(t);
+  let requested = 0, released = 0;
+  navigator.wakeLock = { request:async type => {
+    assert.equal(type, 'screen'); requested++;
+    return { release:async () => { released++; }, addEventListener() {} };
+  } };
+  document.visibilityState = 'visible';
+  const id = store.add('Milch'), second = store.add('Brot');
+  view.startShopping();
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(document.body.classList.contains('shopping-mode'), true);
+  assert.equal(e['einkauf-progress'].hidden, false);
+  assert.equal(e['einkauf-done'].hidden, true);
+  assert.equal(e['einkauf-progress-label'].textContent, '0 / 2');
+  click('einkauf-open', { edit:id });
+  assert.equal(store.entries().find(row => row.uuid === id).erledigt, true);
+  assert.equal(e['einkauf-cart-toggle'].textContent, 'Im Wagen (1)');
+  messages.at(-1).undo(); assert.equal(store.entries().filter(row => row.erledigt).length, 0);
+  click('einkauf-open', { toggle:id }); click('einkauf-open', { toggle:second });
+  assert.equal(e['einkauf-success'].hidden, false);
+  assert.equal(e['einkauf-progress-label'].textContent, '2 / 2');
+  view.finishShopping();
+  await Promise.resolve();
+  assert.equal(store.entries().length, 0);
+  assert.equal(document.body.classList.contains('shopping-mode'), false);
+  assert.equal(requested, 1); assert.equal(released, 1);
+  messages.at(-1).undo(); assert.equal(store.entries().length, 2);
+});
+
+
+test('shopping mode handles browser back/forward and hidden tabs reacquire wake lock', async t => {
+  const { view } = await setup(t);
+  let requested = 0, released = 0;
+  navigator.wakeLock = { request:async () => {
+    requested++;
+    return { release:async () => { released++; }, addEventListener() {} };
+  } };
+  document.visibilityState = 'visible';
+  const settle = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+  view.startShopping(); await settle();
+  document.visibilityState = 'hidden'; document.fire('visibilitychange'); await settle();
+  assert.equal(released, 1);
+  document.visibilityState = 'visible'; document.fire('visibilitychange'); await settle();
+  assert.equal(requested, 2);
+  window.fire('popstate', { state:null }); await settle();
+  assert.equal(document.body.classList.contains('shopping-mode'), false);
+  assert.equal(released, 2);
+  // Forward navigation also works without a Wake Lock API.
+  delete navigator.wakeLock;
+  window.fire('popstate', { state:{ shoppingMode:true } });
+  assert.equal(document.body.classList.contains('shopping-mode'), true);
+  window.fire('popstate', { state:null });
+  assert.equal(document.body.classList.contains('shopping-mode'), false);
 });
