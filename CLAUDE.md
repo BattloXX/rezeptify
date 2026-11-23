@@ -35,6 +35,7 @@ journalctl --user -u rezeptify | grep "MCP "
 ## Architecture
 - `app.py`: FastAPI wiring, CORS, router order, MCP mount/lifespan, static files, SPA catch-all.
 - `routes/rezepte.py`: recipe CRUD, search, ratings, favorites; `aehnlich.py`: similar titles/duplicates.
+- `routes/export.py`: SELECT-only versioned recipe and metadata export for migrations (`/api/export/v1`).
 - `routes/bilder.py`, `ai.py`, `meta.py`: images, AI/JSON imports/search, categories/tags/statistics.
 - `routes/kochen.py`, `einkauf.py`, `planung.py`, `vorschlag.py`: cooking, shopping, planning, suggestions.
 - `routes/mcp_auth.py`: OAuth login page and in-memory login throttling; `system.py`: health/updates/logs.

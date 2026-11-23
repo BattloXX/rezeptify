@@ -204,6 +204,8 @@ Details, Konfigurationsbeispiele und Hinweise stehen in [`mcp_server/README.md`]
 
 Alle Endpunkte außer den als „öffentlich" markierten unterliegen dem Zugangsschutz.
 
+`GET /api/export/v1?teil=rezepte|meta` exportiert Daten nur lesend für Migrationen; Rezepte sind mit `limit` (1–100, Standard 50) und `offset` paginiert.
+
 ```
 Rezepte
 GET    /api/rezepte                       Liste + Suche + Filter + Sortierung

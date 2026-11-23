@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from config import BASE_DIR, UPLOAD_DIR, APP_TITLE, DEBUG
 from db import get_db, init_db
-from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system, mcp_auth, aehnlich
+from routes import rezepte, bilder, ai, meta, kochen, einkauf, planung, vorschlag, system, mcp_auth, aehnlich, export
 from mcp_server.server import build_production_http_app, get_production_oauth_provider
 from services.asset_version import get_asset_version, javascript_files
 
@@ -110,6 +110,7 @@ app.include_router(rezepte.router)
 app.include_router(bilder.router)
 app.include_router(ai.router)
 app.include_router(meta.router)
+app.include_router(export.router)
 app.include_router(kochen.router)
 app.include_router(einkauf.router)
 app.include_router(planung.router)
